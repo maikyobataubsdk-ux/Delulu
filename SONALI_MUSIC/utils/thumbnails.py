@@ -1,135 +1,438 @@
 import os
-import re
 import aiofiles
 import aiohttp
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
-from urllib3.util.retry import Retry
-from youtubesearchpython.__future__ import VideosSearch, CustomSearch
-from config import YOUTUBE_IMG_URL
 
-# Constants
+from PIL import (
+    Image,
+    ImageDraw,
+    ImageEnhance,
+    ImageFilter,
+    ImageFont
+)
+
+from py_yt import VideosSearch
+from config import YOUTUBE_IMG_URL
+from SONALI_MUSIC import app
+
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-PANEL_W, PANEL_H = 763, 545
-PANEL_X = (1280 - PANEL_W) // 2
-PANEL_Y = 88
-TRANSPARENCY = 170
-INNER_OFFSET = 36
 
-THUMB_W, THUMB_H = 542, 273
-THUMB_X = PANEL_X + (PANEL_W - THUMB_W) // 2
-THUMB_Y = PANEL_Y + INNER_OFFSET
+# ---------------------------------------------------
+# TEXT TRIM
+# ---------------------------------------------------
 
-TITLE_X = 377
-META_X = 377
-TITLE_Y = THUMB_Y + THUMB_H + 10
-META_Y = TITLE_Y + 45
+def trim_to_width(text, font, max_width):
 
-BAR_X, BAR_Y = 388, META_Y + 45
-BAR_RED_LEN = 280
-BAR_TOTAL_LEN = 480
+    ellipsis = "..."
 
-ICONS_W, ICONS_H = 415, 45
-ICONS_X = PANEL_X + (PANEL_W - ICONS_W) // 2
-ICONS_Y = BAR_Y + 48
-
-MAX_TITLE_WIDTH = 580
-
-def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
-    ellipsis = "…"
-    if font.getlength(text) <= max_w:
+    if font.getlength(text) <= max_width:
         return text
-    for i in range(len(text) - 1, 0, -1):
-        if font.getlength(text[:i] + ellipsis) <= max_w:
-            return text[:i] + ellipsis
+
+    for i in range(len(text), 0, -1):
+
+        new = text[:i] + ellipsis
+
+        if font.getlength(new) <= max_width:
+            return new
+
     return ellipsis
 
-async def get_thumb(videoid: str):
-    cache_path = os.path.join(CACHE_DIR, f"{videoid}_v4.png")
+
+# ---------------------------------------------------
+# MAIN FUNCTION
+# ---------------------------------------------------
+
+async def get_thumb(videoid: str, player_username: str = None):
+
+    if player_username is None:
+        player_username = app.username
+
+    cache_path = os.path.join(
+        CACHE_DIR,
+        f"{videoid}_shashank.png"
+    )
+
     if os.path.exists(cache_path):
         return cache_path
 
-    # YouTube video data fetch
-    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
-    try:
-        results_data = await results.next()
-        result_items = results_data.get("result", [])
-        if not result_items:
-            raise ValueError("No results found.")
-        data = result_items[0]
-        title = re.sub(r"\W+", " ", data.get("title", "Unsupported Title")).title()
-        thumbnail = data.get("thumbnails", [{}])[0].get("url", YOUTUBE_IMG_URL)
-        duration = data.get("duration")
-        views = data.get("viewCount", {}).get("short", "Unknown Views")
-    except Exception:
-        title, thumbnail, duration, views = "Unsupported Title", YOUTUBE_IMG_URL, None, "Unknown Views"
+    # ---------------------------------------------------
+    # FETCH VIDEO DETAILS
+    # ---------------------------------------------------
 
-    is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
-    duration_text = "Live" if is_live else duration or "Unknown Mins"
-
-    # Download thumbnail
-    thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(thumbnail) as resp:
-                if resp.status == 200:
-                    async with aiofiles.open(thumb_path, "wb") as f:
-                        await f.write(await resp.read())
+
+        results = VideosSearch(
+            f"https://www.youtube.com/watch?v={videoid}",
+            limit=1
+        )
+
+        search_result = await results.next()
+
+        data = search_result.get("result", [])[0]
+
+        title = data.get(
+            "title",
+            "Unknown Title"
+        )
+
+        artist = data.get(
+            "channel",
+            {}
+        ).get(
+            "name",
+            "Unknown Artist"
+        )
+
+        duration = data.get(
+            "duration",
+            "00:00"
+        )
+
+        views = data.get(
+            "viewCount",
+            {}
+        ).get(
+            "short",
+            "0 views"
+        )
+
+        thumbnail = data.get(
+            "thumbnails",
+            [{}]
+        )[0].get(
+            "url",
+            YOUTUBE_IMG_URL
+        )
+
     except Exception:
+
+        title = "Unknown Title"
+        artist = "Unknown Artist"
+        duration = "03:51"
+        views = "0 views"
+        thumbnail = YOUTUBE_IMG_URL
+
+    # ---------------------------------------------------
+    # DOWNLOAD THUMBNAIL
+    # ---------------------------------------------------
+
+    thumb_path = os.path.join(
+        CACHE_DIR,
+        f"raw_{videoid}.jpg"
+    )
+
+    try:
+
+        async with aiohttp.ClientSession() as s:
+
+            async with s.get(thumbnail) as r:
+
+                if r.status == 200:
+
+                    async with aiofiles.open(
+                        thumb_path,
+                        "wb"
+                    ) as f:
+
+                        await f.write(await r.read())
+
+    except:
+
         return YOUTUBE_IMG_URL
 
-    # Create base image
-    base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
-    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(10))).enhance(0.6)
+    # ---------------------------------------------------
+    # IMAGE SETUP
+    # ---------------------------------------------------
 
-    # Frosted glass panel
-    panel_area = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
-    overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
-    frosted = Image.alpha_composite(panel_area, overlay)
-    mask = Image.new("L", (PANEL_W, PANEL_H), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), 50, fill=255)
-    bg.paste(frosted, (PANEL_X, PANEL_Y), mask)
+    W, H = 1280, 720
 
-    # Draw details
+    img = Image.open(
+        thumb_path
+    ).convert("RGBA")
+
+    # ---------------------------------------------------
+    # WHITE FROSTED BACKGROUND
+    # ---------------------------------------------------
+
+    bg = img.resize((W, H))
+
+    bg = bg.filter(
+        ImageFilter.GaussianBlur(radius=40)
+    )
+
+    enhancer = ImageEnhance.Brightness(bg)
+
+    bg = enhancer.enhance(1.4)
+
+    white_layer = Image.new(
+        "RGBA",
+        (W, H),
+        (255, 255, 255, 90)
+    )
+
+    bg = Image.alpha_composite(
+        bg,
+        white_layer
+    )
+
     draw = ImageDraw.Draw(bg)
+
+    # ---------------------------------------------------
+    # LOAD FONTS
+    # ---------------------------------------------------
+
     try:
-        title_font = ImageFont.truetype("SONALI_MUSIC/assets/font2.ttf", 32)
-        regular_font = ImageFont.truetype("SONALI_MUSIC/assets/font.ttf", 18)
-    except OSError:
-        title_font = regular_font = ImageFont.load_default()
 
-    thumb = base.resize((THUMB_W, THUMB_H))
-    tmask = Image.new("L", thumb.size, 0)
-    ImageDraw.Draw(tmask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 20, fill=255)
-    bg.paste(thumb, (THUMB_X, THUMB_Y), tmask)
+        font_bold = "SONALI_MUSIC/assets/font2.ttf"
+        font_med = "SONALI_MUSIC/assets/font.ttf"
 
-    draw.text((TITLE_X, TITLE_Y), trim_to_width(title, title_font, MAX_TITLE_WIDTH), fill="black", font=title_font)
-    draw.text((META_X, META_Y), f"YouTube | {views}", fill="black", font=regular_font)
+        title_font = ImageFont.truetype(
+            font_bold,
+            58
+        )
 
-    # Progress bar
-    draw.line([(BAR_X, BAR_Y), (BAR_X + BAR_RED_LEN, BAR_Y)], fill="red", width=6)
-    draw.line([(BAR_X + BAR_RED_LEN, BAR_Y), (BAR_X + BAR_TOTAL_LEN, BAR_Y)], fill="gray", width=5)
-    draw.ellipse([(BAR_X + BAR_RED_LEN - 7, BAR_Y - 7), (BAR_X + BAR_RED_LEN + 7, BAR_Y + 7)], fill="red")
+        artist_font = ImageFont.truetype(
+            font_med,
+            40
+        )
 
-    draw.text((BAR_X, BAR_Y + 15), "00:00", fill="black", font=regular_font)
-    end_text = "Live" if is_live else duration_text
-    draw.text((BAR_X + BAR_TOTAL_LEN - (90 if is_live else 60), BAR_Y + 15), end_text, fill="red" if is_live else "black", font=regular_font)
+        time_font = ImageFont.truetype(
+            font_med,
+            30
+        )
 
-    # Icons
-    icons_path = "SONALI_MUSIC/assets/play_icons.png"
-    if os.path.isfile(icons_path):
-        ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
-        r, g, b, a = ic.split()
-        black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
-        bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
+    except:
 
-    # Cleanup and save
+        title_font = artist_font = time_font = ImageFont.load_default()
+
+    # ---------------------------------------------------
+    # ALBUM IMAGE
+    # ---------------------------------------------------
+
+    frame_w = 450
+    frame_h = 450
+
+    frame_x = 90
+    frame_y = (H - frame_h) // 2
+
+    album = img.resize(
+        (frame_w, frame_h),
+        Image.LANCZOS
+    )
+
+    # Rounded mask
+    mask = Image.new(
+        "L",
+        (frame_w, frame_h),
+        0
+    )
+
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, frame_w, frame_h),
+        radius=45,
+        fill=255
+    )
+
+    # White glow
+    glow = Image.new(
+        "RGBA",
+        (frame_w + 70, frame_h + 70),
+        (0, 0, 0, 0)
+    )
+
+    ImageDraw.Draw(glow).rounded_rectangle(
+        (
+            35,
+            35,
+            frame_w + 35,
+            frame_h + 35
+        ),
+        radius=50,
+        fill=(255, 255, 255, 130)
+    )
+
+    glow = glow.filter(
+        ImageFilter.GaussianBlur(radius=30)
+    )
+
+    bg.paste(
+        glow,
+        (frame_x - 35, frame_y - 35),
+        glow
+    )
+
+    # Paste album
+    bg.paste(
+        album,
+        (frame_x, frame_y),
+        mask
+    )
+
+    # Border
+    draw.rounded_rectangle(
+        (
+            frame_x,
+            frame_y,
+            frame_x + frame_w,
+            frame_y + frame_h
+        ),
+        radius=45,
+        outline=(255, 255, 255, 190),
+        width=5
+    )
+
+    # ---------------------------------------------------
+    # GLASS CARD
+    # ---------------------------------------------------
+
+    text_x = 620
+
+    glass_rect = [
+        text_x - 40,
+        frame_y,
+        W - 70,
+        frame_y + frame_h
+    ]
+
+    overlay = Image.new(
+        "RGBA",
+        (W, H),
+        (0, 0, 0, 0)
+    )
+
+    d_overlay = ImageDraw.Draw(overlay)
+
+    d_overlay.rounded_rectangle(
+        glass_rect,
+        radius=40,
+        fill=(255, 255, 255, 75),
+        outline=(255, 255, 255, 130),
+        width=2
+    )
+
+    bg.alpha_composite(overlay)
+
+    # ---------------------------------------------------
+    # TEXT
+    # ---------------------------------------------------
+
+    title_color = (255, 70, 170)
+    sub_color = (255, 120, 190)
+
+    clean_title = trim_to_width(
+        title,
+        title_font,
+        520
+    )
+
+    clean_artist = trim_to_width(
+        f"By {artist}",
+        artist_font,
+        500
+    )
+
+    draw.text(
+        (text_x, frame_y + 45),
+        clean_title,
+        font=title_font,
+        fill=title_color
+    )
+
+    draw.text(
+        (text_x, frame_y + 130),
+        clean_artist,
+        font=artist_font,
+        fill=sub_color
+    )
+
+    draw.text(
+        (text_x, frame_y + 205),
+        f"Views: {views}",
+        font=time_font,
+        fill=sub_color
+    )
+
+    # ---------------------------------------------------
+    # MUSIC BAR
+    # ---------------------------------------------------
+
+    bar_width = 500
+    bar_height = 10
+
+    bar_x = text_x
+    bar_y = frame_y + 330
+
+    # White line
+    draw.rounded_rectangle(
+        (
+            bar_x,
+            bar_y,
+            bar_x + bar_width,
+            bar_y + bar_height
+        ),
+        radius=10,
+        fill=(255, 255, 255, 180)
+    )
+
+    # Pink progress
+    progress = 0.40
+
+    draw.rounded_rectangle(
+        (
+            bar_x,
+            bar_y,
+            bar_x + (bar_width * progress),
+            bar_y + bar_height
+        ),
+        radius=10,
+        fill=(255, 40, 150)
+    )
+
+    # Circle
+    circle_r = 13
+
+    cx = bar_x + (bar_width * progress)
+
+    draw.ellipse(
+        (
+            cx - circle_r,
+            bar_y - circle_r + 5,
+            cx + circle_r,
+            bar_y + circle_r + 5
+        ),
+        fill=(255, 255, 255)
+    )
+
+    # Time Text
+    draw.text(
+        (bar_x, bar_y + 32),
+        "00:25",
+        font=time_font,
+        fill=(255, 40, 150)
+    )
+
+    draw.text(
+        (bar_x + bar_width - 80, bar_y + 32),
+        duration,
+        font=time_font,
+        fill=(255, 40, 150)
+    )
+
+    # ---------------------------------------------------
+    # SAVE
+    # ---------------------------------------------------
+
+    bg = bg.convert("RGB")
+
+    bg.save(
+        cache_path,
+        quality=95
+    )
+
     try:
         os.remove(thumb_path)
-    except OSError:
+    except:
         pass
 
-    bg.save(cache_path)
     return cache_path
-    
