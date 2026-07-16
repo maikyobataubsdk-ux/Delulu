@@ -299,11 +299,20 @@ class Call(PyTgCalls):
         except exceptions.NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
         except exceptions.NoAudioSourceFound:
-            raise AssistantErr(_["call_10"])
+            raise AssistantErr(
+                "❖ <b>ᴀᴜᴅɪᴏ sᴏᴜʀᴄᴇ ɴᴏᴛ ғᴏᴜɴᴅ</b>\n\n"
+                "ᴛʜᴇ ᴀssɪsᴛᴀɴᴛ ᴄᴏᴜʟᴅ ɴᴏᴛ ғɪɴᴅ ᴀ ᴠᴀʟɪᴅ ᴀᴜᴅɪᴏ/ᴠɪᴅᴇᴏ sᴏᴜʀᴄᴇ ᴛᴏ sᴛʀᴇᴀᴍ. "
+                "ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ᴡɪᴛʜ ᴀ ᴅɪғғᴇʀᴇɴᴛ ʟɪɴᴋ ᴏʀ ʀᴇsᴛᴀʀᴛ ᴛʜᴇ ᴠɪᴅᴇᴏᴄʜᴀᴛ."
+            )
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
-        except Exception:
-            raise AssistantErr(_["call_10"])
+        except Exception as e:
+            raise AssistantErr(
+                f"❖ <b>ᴀssɪsᴛᴀɴᴛ ᴇʀʀᴏʀ</b>\n\n"
+                f"ᴀɴ ᴇxᴄᴇᴘᴛɪᴏɴ ᴏᴄᴄᴜʀʀᴇᴅ ᴡʜɪʟᴇ ᴘʀᴏᴄᴇssɪɴɢ ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ.\n\n"
+                f"<b>Exception Type:</b> <code>{type(e).__name__}</code>\n"
+                f"<b>Error Details:</b> <code>{str(e)}</code>"
+            )
         await add_active_chat(chat_id)
         await music_on(chat_id)
         if video:
