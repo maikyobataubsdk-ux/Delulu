@@ -1,3 +1,6 @@
+from SONALI_MUSIC.core.ffmpeg import ensure_ffmpeg
+ensure_ffmpeg()
+
 from SONALI_MUSIC.core.bot import Sona
 from SONALI_MUSIC.core.dir import dirr
 from SONALI_MUSIC.core.git import git
