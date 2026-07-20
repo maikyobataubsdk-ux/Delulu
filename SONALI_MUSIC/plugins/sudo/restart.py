@@ -2,6 +2,7 @@ import asyncio
 import os
 import shutil
 import socket
+import sys
 from datetime import datetime
 
 import urllib3
@@ -27,7 +28,7 @@ async def is_heroku():
     return "heroku" in socket.getfqdn()
 
 
-@app.on_message(filters.command(["getlog", "logs", "getlogs"], prefixes=["/", "!", "%", ",", "", ".", "@", "#"]) & filters.user(8143754205))
+@app.on_message(filters.command(["getlog", "logs", "getlogs"], prefixes=["/", "!", "%", ",", "", ".", "@", "#"]) & SUDOERS)
 @language
 async def log_(client, message, _):
     try:
@@ -36,7 +37,7 @@ async def log_(client, message, _):
         await message.reply_text(_["server_1"])
 
 
-@app.on_message(filters.command(["update", "gitpull"], prefixes=["/", "!", "%", ",", "", ".", "@", "#"]) & filters.user(8143754205))
+@app.on_message(filters.command(["update", "gitpull"], prefixes=["/", "!", "%", ",", "", ".", "@", "#"]) & SUDOERS)
 @language
 async def update_(client, message, _):
     if await is_heroku():
@@ -106,11 +107,14 @@ async def update_(client, message, _):
             )
     else:
         os.system("pip3 install -r requirements.txt")
-        os.system(f"kill -9 {os.getpid()} && bash start")
-        exit()
+        try:
+            os.execl(sys.executable, sys.executable, "-m", "SONALI_MUSIC")
+        except Exception:
+            os.system(f"kill -9 {os.getpid()} && bash start")
+            exit()
 
 
-@app.on_message(filters.command(["restart"]) & filters.user(8274033012))
+@app.on_message(filters.command(["restart"]) & SUDOERS)
 async def restart_(_, message):
     response = await message.reply_text("ʀᴇsᴛᴀʀᴛɪɴɢ...")
     ac_chats = await get_active_chats()
@@ -134,4 +138,7 @@ async def restart_(_, message):
     await response.edit_text(
         "» ʀᴇsᴛᴀʀᴛ ᴘʀᴏᴄᴇss sᴛᴀʀᴛᴇᴅ, ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ғᴏʀ ғᴇᴡ sᴇᴄᴏɴᴅs ᴜɴᴛɪʟ ᴛʜᴇ ʙᴏᴛ sᴛᴀʀᴛs..."
     )
-    os.system(f"kill -9 {os.getpid()} && bash start")
+    try:
+        os.execl(sys.executable, sys.executable, "-m", "SONALI_MUSIC")
+    except Exception:
+        os.system(f"kill -9 {os.getpid()} && bash start")
