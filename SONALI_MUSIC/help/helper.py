@@ -27,7 +27,7 @@ class Helper(object):
 
 ❍ /ask [ǫυєʀʏ] : sєᴧʀᴄʜ ᴛʜє ᴧηʏ ᴛʏᴘє ǫυєsᴛɪση
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -42,7 +42,7 @@ class Helper(object):
 ```
 ❖ єxᴧϻᴘʟє : /google ʜɪɴᴅɪ sᴏɴɢs```
 
-**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
     HELP_03 = '''```
@@ -57,7 +57,7 @@ class Helper(object):
 
 **❍ /tts : [ᴛєxᴛ]
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07) **
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II) **
 '''
 
 
@@ -70,7 +70,7 @@ class Helper(object):
 ❍ /groupinfo : ɢєᴛ ʏσᴜʀ ɢʀσᴜᴘ ɪηғσ `ᴇx :- /groupinfo ɢʀᴏᴜᴘ ᴜsᴇʀɴᴀᴍᴇ`
 ❍ /status : ɢєᴛ ʏσᴜʀ ɢʀσᴜᴘ sᴛᴧᴛᴜs
 
-𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -83,7 +83,7 @@ class Helper(object):
 ```
 ❖ єxᴧϻᴘʟє : /font  Baby```
 
-**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07) **
+**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II) **
 '''
 
     HELP_06 = '''```
@@ -91,7 +91,7 @@ class Helper(object):
 
 **❍ /math ➠ sσʟᴠєs ϻᴧᴛʜєϻᴧᴛɪᴄᴧʟ ᴘʀσʙʟєϻs ᴧηᴅ ǫυᴧᴛɪσηs
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -106,7 +106,7 @@ class Helper(object):
 ❍ /shayari ➠ ʀᴧηᴅσϻ sʜᴧʏᴧʀɪ ᴛᴧɢ 
 ❍ /shstop ⇴ sᴛσᴘ ᴛᴧɢ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -117,7 +117,7 @@ class Helper(object):
 ❍ /cute ➠ ᴄʜєᴄᴋ ʏσυʀ ᴄυᴛєηєss.
 ❍ /love ➠ ᴧᴅᴅ ᴛᴡᴏ ηᴧϻєs ᴧηᴅ sєє ʟσᴠᴇ ᴘσssɪʙɪʟɪᴛʏ !! `ʟɪᴋᴇ ʀᴧᴊ + priya.`
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -131,7 +131,7 @@ class Helper(object):
 
 ❍ /hastag : [ᴛєxᴛ]
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -143,7 +143,7 @@ class Helper(object):
 ❍ /kang ➠ ʀєᴘʟʏ ᴧηʏ sᴛɪᴄᴋєʀ & ᴄʀєᴀᴛє ʏσᴜʀ sᴛɪᴄᴋєʀ ᴘᴧᴄᴋ
 ❍ /st ➠ ғɪηᴅ ᴏʀɪɢɪηᴧʟ sᴛɪᴄᴋєʀ.
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -161,7 +161,7 @@ class Helper(object):
 ❍ /truth [sєηᴅs ᴧ ʀᴧηᴅσϻ ᴛʀυᴛʜ sᴛʀɪηɢ]
 ❍ /dare : [sєηᴅs ᴧ ʀᴧηᴅσϻ ᴅᴧʀє sᴛʀɪηɢ]
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -172,7 +172,7 @@ class Helper(object):
 ❍ /q : ᴄʀєᴧᴛє ᴧ ǫυσᴛє ғʀσϻ ᴛʜє ϻєssᴧɢє
 ❍ /q r : ᴄʀєᴧᴛє ᴧ ǫυσᴛє ғʀσϻ ᴛʜє ϻєssᴧɢє ᴡɪᴛʜ ʀєᴘʟʏ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -184,7 +184,7 @@ class Helper(object):
 ❍ /truth : sєηᴅs ᴧ ʀᴧηᴅσϻ ᴛʀυᴛʜ sᴛʀɪηɢ
 ❍ /dare : sєηᴅs ᴧ ʀᴧηᴅσϻ ᴅᴧʀє sᴛʀɪηɢ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -229,7 +229,7 @@ class Helper(object):
 ᴛʜɪs ᴄσϻϻᴧηᴅ ᴡɪʟʟ ᴡσʀᴋ σηʟʏ ɪғ ʏσυ ɢɪᴠє ʙᴧη ʀɪɢʜᴛs ᴛσ ᴛʜє ʙσᴛ ᴡɪᴛʜ ᴧᴅϻɪη```
 
 
-**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
     HELP_15 = '''```
@@ -238,7 +238,7 @@ class Helper(object):
 **❍ /kick <userhandle> : ᴋɪᴄᴋs ᴧ υsєʀ συᴛ σғ ᴛʜє ɢʀσυᴘ, (ᴠɪᴧ ʜᴧηᴅʟє, σʀ ʀєᴘʟʏ)
 ❍ /kickme: ᴋɪᴄᴋs ᴛʜє υsєʀ ᴡʜσ ɪssυєᴅ ᴛʜє ᴄσϻϻᴧηᴅ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -255,7 +255,7 @@ class Helper(object):
 ```
 ᴛʜɪs ᴄσϻϻᴧηᴅ ᴡɪʟʟ ᴡσʀᴋ σηʟʏ ɪғ ʏσυ ɢɪᴠє ʙᴧη ʀɪɢʜᴛs ᴛσ ᴛʜє ʙσᴛ ᴡɪᴛʜ ᴧᴅϻɪη```
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -285,7 +285,7 @@ class Helper(object):
 ❍ /unbanall ➠ ᴜηʙᴧη ᴧʟʟ ʙᴧη ϻєϻʙєʀs
 ❍ /unpinall ➠ ᴜηᴘɪη ᴧʟʟ ᴘɪη ᴍєssᴧɢᴇ**
 
-**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -295,7 +295,7 @@ class Helper(object):
 **❍ /staff ➠ ᴅɪsᴘʟᴧʏs ᴛʜє ʟɪsᴛ σғ sᴛᴧғғ ϻєϻʙєʀs
 ❍ /bots ➠ ᴅɪsᴘʟᴧʏs ᴛʜє ʟɪsᴛ σғ ʙσᴛs ɪη ᴛʜє ɢʀσυᴘ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -307,7 +307,7 @@ class Helper(object):
 ❍ /setphoto ➠ sєᴛs ᴛʜє ɢʀσυᴘ ᴘʜσᴛσ
 ❍ /removephoto ➠ ʀєϻσᴠєs ᴛʜє ɢʀσυᴘ ᴘʜσᴛσ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -318,7 +318,7 @@ class Helper(object):
 **❍ /zombies ➠ ʀєϻσᴠєs ᴧᴄᴄ ᴅєʟєᴛєᴅ ϻєϻʙєʀs ғʀσϻ ᴛʜє ɢʀσυᴘ
 
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -333,7 +333,7 @@ class Helper(object):
 ❍ /basket [ʙᴧsᴋєᴛʙᴧʟʟ ɢᴧϻє]
 ❍ /football [ғσσᴛʙᴧʟʟ ɢᴧϻє]
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -344,21 +344,21 @@ class Helper(object):
 ❍ /imposter on
 ❍ /imposter off
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
     HELP_23 = '''```
 ❖ sᴧηɢ ϻᴧᴛᴧ ᴄσϻϻᴧηᴅ ❖```
 **❍ /sg ➠ υsєʀ ηᴧϻє ᴧηᴅ υsєʀηᴧϻє ʜɪsᴛσʀʏ
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
     HELP_24 = '''```
 ❖ ᴛʀᴧηsʟᴧᴛєs ❖```
 **❍ /tr ➠ ᴄᴧη ᴛʀᴧηꜱʟᴧᴛє ϻυʟᴛɪᴘʟє ʟᴧηɢυᴧɢєs
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -369,7 +369,7 @@ class Helper(object):
 
 `єxᴧϻᴘʟє : /git ABHIPAPA`
 
-**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+**❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
 
 
@@ -380,7 +380,7 @@ class Helper(object):
 ❍ /tgm [ʀєᴘʟʏ ᴛσ ᴧηʏ ϻєᴅɪᴧ]
 ❍ /tgt [ʀєᴘʟʏ ᴛσ ᴧηʏ ϻєᴅɪᴧ]
 
-❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)**
+❖ 𝐏ᴏᴡᴇʀᴇᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)**
 '''
     HELP_PROMOTION = '''
 **───────────────────────
@@ -397,12 +397,12 @@ class Helper(object):
 ───────────────────────
 ● ʙєsᴛ ᴧηᴅ ᴄʜєᴧᴘ ɪη ᴛєʟєɢʀᴧϻ 400-500+ ϻєϻʙєʀs ɪη σηє ᴘʀσϻσᴛɪση ɢυʀᴧηᴛєє...
 ───────────────────────
-❍ ᴄσηᴛᴧᴄᴛ - [- 𝑨 𝑩 𝑯 𝑰 !!](https://t.me/Xbroze)
+❍ ᴄσηᴛᴧᴄᴛ - [- 𝑨𝑳𝑶𝑵𝑬 !!](https://t.me/II_ALONE_BOY_Il)
 ───────────────────────**
 '''
     HELP_ABOUT = '''
 **───────────────────────
- ᴡєʟᴄσϻє ᴛσ ˹[𝙎𝙀𝙅𝘼𝙇 𝙓 𝙈𝙐𝙎𝙄𝘾](https://t.me/your_fairytale07)˼ ʙσᴛ sᴛᴧᴛυs 
+ ᴡєʟᴄσϻє ᴛσ ˹[𝙎𝙀𝙅𝘼𝙇 𝙓 𝙈𝙐𝙎𝙄𝘾](https://t.me/II_MUSIC_BOT_UPDATE_II)˼ ʙσᴛ sᴛᴧᴛυs 
 ───────────────────────
        ❖ │ ʀєᴧʟ ᴛɪϻє ʙσᴛ's sᴛᴧᴛυs │❖
 ───────────────────────
@@ -415,11 +415,11 @@ class Helper(object):
 ╭⎋ [𝙎𝙀𝙅𝘼𝙇 𝙓 𝙈𝙐𝙎𝙄𝘾](https://t.me/your_fairytale07) : ᴧʟɪᴠє 
 ╰⊚ υᴘᴛɪϻє : 12ʜ:58ϻ:20s | ᴄᴘυ : 5.0% | υsᴧɢє : 24 | ᴧssɪsᴛᴧηᴛs : 02
 ───────────────────────
-⊚ ʙσᴛ sᴛᴧᴛυs ᴧηᴅ ϻσʀє ʙσᴛs - [ᴄʟɪᴄᴋ ʜєʀє](https://t.me/your_fairytale07)
+⊚ ʙσᴛ sᴛᴧᴛυs ᴧηᴅ ϻσʀє ʙσᴛs - [ᴄʟɪᴄᴋ ʜєʀє](https://t.me/II_MUSIC_BOT_UPDATE_II)
 ───────────────────────
 ⊚ ʟᴧsᴛ ᴄʜєᴄᴋєᴅ ση : ᴅᴧᴛє : 09 ᴀᴘʀɪʟ 2026  
 ───────────────────────
-❍ 𝐏ᴏᴡєʀєᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)
+❍ 𝐏ᴏᴡєʀєᴅ 𝖡ʏ » [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_MUSIC_BOT_UPDATE_II)
 ───────────────────────**
 '''
     HELP_ALLBOT = '''
@@ -434,10 +434,10 @@ class Helper(object):
 ● ᴇηᴊᴏʏ ғєєʟ ғʀєє ϻᴜsɪᴄ ᴡɪᴛʜ ˹ 𝑴𝒖𝒔𝒊𝒄˼
 ● ᴧᴅᴅ ϻє ηᴏᴡ ʙᴧʙʏ ɪɴ ʏᴏᴜʀ ɢʀσᴜᴘs.
 ───────────────────────
-❖ υᴘᴅᴧᴛєs ᴄʜᴧηηєʟ ➥ [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/your_fairytale07)
-❖ sυᴘᴘσʀᴛ ᴄʜᴧᴛ ➥ [- 𝑨 𝑩 𝑯 𝑰 !!](https://t.me/Xbroze)
-❖ ʙᴏᴛ σᴡηєʀ ➥ [- 𝑨 𝑩 𝑯 𝑰 !!](https://t.me/Xbroze)
-❖ ʀєᴘσ ʟɪηᴋ ➥ [ᴄʟɪᴄᴋ-ʜєʀє](https://t.me/Xbroze)
+❖ υᴘᴅᴧᴛєs ᴄʜᴧηηєʟ ➥ [˹ ғᴀɪʀʏᴛᴀʟᴇ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/II_SHAYRI_KI_DUNIYA_II)
+❖ sυᴘᴘσʀᴛ ᴄʜᴧᴛ ➥ [- 𝑨𝑳𝑶𝑵𝑬 !!](https://t.me/II_ALONE_BOY_Il)
+❖ ʙᴏᴛ σᴡηєʀ ➥ [- 𝑨𝑳𝑶𝑵𝑬!!](https://t.me/II_ALONE_BOY_Il)
+❖ ʀєᴘσ ʟɪηᴋ ➥ [ᴄʟɪᴄᴋ-ʜєʀє](https://t.me/II_ALONE_BOY_Il)
 ───────────────────────
 ❖ ᴄʟɪᴄᴋ ση ᴛʜє ʜєʟᴩ ʙυᴛᴛση ᴛσ ɢєᴛ ɪηғσ
    ᴧʙσυᴛ ϻʏ ϻσᴅυʟєs ᴧηᴅ ᴄσϻϻᴧηᴅs...!!
