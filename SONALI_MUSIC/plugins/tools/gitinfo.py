@@ -9,11 +9,11 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 @app.on_message(filters.command(["github", "git"]))
 async def github(_, message):
     if len(message.command) != 2:
-        await message.reply_text("`/git spicycodez`")
+        await message.reply_text("`/git alone`")
         return
 
     username = message.text.split(None, 1)[1]
-    URL = f'https://api.github.com/users/{username}'
+    URL = f'https://t.me/MAHI_MUSICSBOT'
 
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as request:
