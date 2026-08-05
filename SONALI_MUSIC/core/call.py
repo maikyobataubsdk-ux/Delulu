@@ -453,6 +453,10 @@ class Call(PyTgCalls):
                 return await mystic.edit_text(
                     _["call_6"], disable_web_page_preview=True
                 )
+            if not file_path:
+                return await mystic.edit_text(
+                    _["call_6"], disable_web_page_preview=True
+                )
             stream = self._build_stream(file_path, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
