@@ -262,19 +262,29 @@ class YouTubeAPI:
         songvideo: Union[bool, str] = None,
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
-    ) -> str:
+    ):
         if videoid:
             link = self.base + link
+        is_song_downloader = bool(songaudio or songvideo)
         try:
-            if video:
+            if video or songvideo:
                 downloaded_file = await download_video(link)
             else:
                 downloaded_file = await download_song(link)
-            if downloaded_file:
+            if not downloaded_file:
+                if is_song_downloader:
+                    raise Exception("Download failed")
+                else:
+                    return None, False
+            if is_song_downloader:
+                return downloaded_file
+            else:
                 return downloaded_file, True
-            return None, False
-        except Exception:
-            return None, False
+        except Exception as e:
+            if is_song_downloader:
+                raise e
+            else:
+                return None, False
 
 
 YouTube = YouTubeAPI()
