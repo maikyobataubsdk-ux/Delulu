@@ -15,6 +15,13 @@ API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ") ## 
 DOWNLOAD_DIR = "downloads"
 
 
+def get_cookie_file():
+    for path in ["cookies/cookies.txt", "SONALI_MUSIC/assets/cookies.txt", "assets/cookies.txt"]:
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+    return None
+
+
 def time_to_seconds(time):
     stringt = str(time)
     return sum(int(x) * 60 ** i for i, x in enumerate(reversed(stringt.split(":"))))
@@ -67,6 +74,9 @@ async def download_song(link: str) -> str:
             "no_warnings": True,
             "nocheckcertificate": True,
         }
+        cookie_file = get_cookie_file()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
@@ -119,6 +129,9 @@ async def download_video(link: str) -> str:
             "no_warnings": True,
             "nocheckcertificate": True,
         }
+        cookie_file = get_cookie_file()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
@@ -261,6 +274,9 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         ytdl_opts = {"quiet": True}
+        cookie_file = get_cookie_file()
+        if cookie_file:
+            ytdl_opts["cookiefile"] = cookie_file
         ydl = yt_dlp.YoutubeDL(ytdl_opts)
         with ydl:
             formats_available = []
