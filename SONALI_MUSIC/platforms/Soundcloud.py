@@ -7,13 +7,19 @@ from SONALI_MUSIC.utils.formatters import seconds_to_min
 
 class SoundAPI:
     def __init__(self):
+        from SONALI_MUSIC.platforms.Youtube import get_cookie_file
         self.opts = {
             "outtmpl": "downloads/%(id)s.%(ext)s",
             "format": "best",
             "retries": 3,
             "nooverwrites": False,
             "continuedl": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
         }
+        cookie_file = get_cookie_file()
+        if cookie_file:
+            self.opts["cookiefile"] = cookie_file
 
     async def valid(self, link: str):
         if "soundcloud" in link:
