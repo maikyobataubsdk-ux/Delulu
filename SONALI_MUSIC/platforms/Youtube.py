@@ -73,6 +73,8 @@ async def download_song(link: str) -> str:
             "quiet": True,
             "no_warnings": True,
             "nocheckcertificate": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
         }
         cookie_file = get_cookie_file()
         if cookie_file:
@@ -128,6 +130,8 @@ async def download_video(link: str) -> str:
             "quiet": True,
             "no_warnings": True,
             "nocheckcertificate": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
         }
         cookie_file = get_cookie_file()
         if cookie_file:
@@ -273,7 +277,11 @@ class YouTubeAPI:
             link = self.base + link
         if "&" in link:
             link = link.split("&")[0]
-        ytdl_opts = {"quiet": True}
+        ytdl_opts = {
+            "quiet": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
+        }
         cookie_file = get_cookie_file()
         if cookie_file:
             ytdl_opts["cookiefile"] = cookie_file

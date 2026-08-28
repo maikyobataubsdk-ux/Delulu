@@ -16,6 +16,8 @@ ytdl_init_opts = {
     "format": "bestaudio[ext=m4a]",
     "geo_bypass": True,
     "nocheckcertificate": True,
+    "js_runtimes": {"node": {}},
+    "remote_components": ["ejs:github"],
 }
 _cookie_file = get_cookie_file()
 if _cookie_file:
@@ -32,6 +34,8 @@ def download(url: str, my_hook) -> str:
         "nocheckcertificate": True,
         'quiet': True,
         'no_warnings': True,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
     }
     cookie_file = get_cookie_file()
     if cookie_file:
