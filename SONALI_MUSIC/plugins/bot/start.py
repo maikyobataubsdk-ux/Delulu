@@ -3,10 +3,8 @@ import random
 from pyrogram import filters
 from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from youtubesearchpython.__future__ import VideosSearch
- 
 import config
-from SONALI_MUSIC import app
+from SONALI_MUSIC import app, YouTube
 from SONALI_MUSIC.misc import _boot_
 from SONALI_MUSIC.plugins.sudo.sudoers import sudoers_list
 from SONALI_MUSIC.utils.database import get_served_chats, get_served_users, get_sudoers
@@ -61,36 +59,45 @@ async def start_pm(client, message: Message, _):
         if name[0:3] == "inf":
             m = await message.reply_text("🔎")
             query = (str(name)).replace("info_", "", 1)
-            query = f"https://www.youtube.com/watch?v={query}"
-            results = VideosSearch(query, limit=1)
-            for result in (await results.next())["result"]:
-                title = result["title"]
-                duration = result["duration"]
-                views = result["viewCount"]["short"]
-                thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-                channellink = result["channel"]["link"]
-                channel = result["channel"]["name"]
-                link = result["link"]
-                published = result["publishedTime"]
-            searched_text = _["start_6"].format(
-                title, duration, views, published, channellink, channel, app.mention
-            )
-            key = InlineKeyboardMarkup(
-                [
+            yt_link = f"https://www.youtube.com/watch?v={query}"
+            try:
+                track_details, vidid = await YouTube.track(query)
+                title = track_details.get("title", "Unknown")
+                duration = track_details.get("duration_min", "0:00")
+                thumbnail = track_details.get("thumb", "")
+                link = track_details.get("link", yt_link)
+
+                searched_text = _["start_6"].format(
+                    title, duration, "N/A", "N/A", link, "YouTube", app.mention
+                )
+                key = InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(text=_["S_B_8"], url=link),
-                        InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
-                    ],
-                ]
-            )
-            await m.delete()
-            await app.send_photo(
-                chat_id=message.chat.id,
-                photo=thumbnail,
-                caption=searched_text,
-                reply_markup=key,
-                has_spoiler=True,
-            )
+                        [
+                            InlineKeyboardButton(text=_["S_B_8"], url=link),
+                            InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
+                        ],
+                    ]
+                )
+                await m.delete()
+                if thumbnail:
+                    await app.send_photo(
+                        chat_id=message.chat.id,
+                        photo=thumbnail,
+                        caption=searched_text,
+                        reply_markup=key,
+                        has_spoiler=True,
+                    )
+                else:
+                    await app.send_message(
+                        chat_id=message.chat.id,
+                        text=searched_text,
+                        reply_markup=key,
+                        disable_web_page_preview=True,
+                    )
+            except Exception as e:
+                await m.edit_text(f"Failed to fetch track info: {e}")
+                return
+
             if await is_on_off(2):
                 return await app.send_message(
                     chat_id=config.LOGGER_ID,
