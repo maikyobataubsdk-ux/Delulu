@@ -116,6 +116,7 @@ async def download_song(link: str) -> str:
                 "cookiefile": cookie_file,
                 "js_runtimes": {"node": {}},
                 "remote_components": ["ejs:github"],
+                "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
             }
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -147,7 +148,7 @@ async def download_song(link: str) -> str:
             "nocheckcertificate": True,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -214,6 +215,7 @@ async def download_video(link: str) -> str:
                 "cookiefile": cookie_file,
                 "js_runtimes": {"node": {}},
                 "remote_components": ["ejs:github"],
+                "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
             }
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -238,7 +240,7 @@ async def download_video(link: str) -> str:
             "nocheckcertificate": True,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -421,8 +423,10 @@ class YouTubeAPI:
             link = link.split("&")[0]
         ytdl_opts = {
             "quiet": True,
+            "no_warnings": True,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
         cookie_file = get_cookie_file()
         if cookie_file:

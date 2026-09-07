@@ -244,14 +244,31 @@ async def song_download_cb(client, CallbackQuery, _):
     from SONALI_MUSIC.platforms.Youtube import get_cookie_file
     song_opts = {
         "quiet": True,
+        "no_warnings": True,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
+        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
     cookie_file = get_cookie_file()
     if cookie_file:
         song_opts["cookiefile"] = cookie_file
-    with yt_dlp.YoutubeDL(song_opts) as ytdl:
-        x = ytdl.extract_info(yturl, download=False)
+    try:
+        with yt_dlp.YoutubeDL(song_opts) as ytdl:
+            x = ytdl.extract_info(yturl, download=False)
+    except Exception:
+        # Fallback without cookie if cookie is blocked
+        song_opts_nocookie = {
+            "quiet": True,
+            "no_warnings": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
+        }
+        try:
+            with yt_dlp.YoutubeDL(song_opts_nocookie) as ytdl:
+                x = ytdl.extract_info(yturl, download=False)
+        except Exception as e:
+            return await mystic.edit_text(_["song_9"].format(str(e)))
     title = (x["title"]).title()
     title = re.sub(r"\W+", " ", title)
     thumb_image_path = await CallbackQuery.message.download()

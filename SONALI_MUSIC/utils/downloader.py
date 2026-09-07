@@ -18,6 +18,7 @@ ytdl_init_opts = {
     "nocheckcertificate": True,
     "js_runtimes": {"node": {}},
     "remote_components": ["ejs:github"],
+    "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
 }
 _cookie_file = get_cookie_file()
 if _cookie_file:
@@ -36,18 +37,28 @@ def download(url: str, my_hook) -> str:
         'no_warnings': True,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
+        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
     cookie_file = get_cookie_file()
     if cookie_file:
         ydl_optssx["cookiefile"] = cookie_file
-    info = ytdl.extract_info(url, False)
+    try:
+        info = ytdl.extract_info(url, False)
+    except Exception:
+        opts_nocookie = dict(ytdl_init_opts)
+        opts_nocookie.pop("cookiefile", None)
+        ydl_optssx.pop("cookiefile", None)
+        try:
+            info = yt_dlp.YoutubeDL(opts_nocookie).extract_info(url, False)
+        except Exception as e:
+            print(f"ytdl extract_info error: {e}")
+            return None
     try:
         x = yt_dlp.YoutubeDL(ydl_optssx)
         x.add_progress_hook(my_hook)
         dloader = x.download([url])
     except Exception as y_e:
-        return print(y_e)
-    else:
-        dloader
+        print(f"ytdl download error: {y_e}")
+        return None
     xyz = path.join("downloads", f"{info['id']}.{info['ext']}")
     return xyz
