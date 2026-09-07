@@ -29,19 +29,45 @@ def get_cookie_file():
     return None
 
 
+def extract_video_id(link: str) -> str:
+    if not link:
+        return ""
+    if "youtu.be/" in link:
+        return link.split("youtu.be/")[-1].split("?")[0].split("&")[0]
+    if "v=" in link:
+        return link.split("v=")[-1].split("&")[0].split("?")[0]
+    return link.split("&")[0].split("?")[0].split("/")[-1]
+
+
 def time_to_seconds(time):
     stringt = str(time)
     return sum(int(x) * 60 ** i for i, x in enumerate(reversed(stringt.split(":"))))
 
 
+def is_valid_media_file(file_path: str, min_size: int = 1024) -> bool:
+    if not os.path.exists(file_path):
+        return False
+    size = os.path.getsize(file_path)
+    if size < min_size:
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(256)
+            if header.strip().startswith(b"{") or b'"error"' in header.lower() or b'"message"' in header.lower():
+                return False
+    except Exception:
+        return False
+    return True
+
+
 async def download_song(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    video_id = extract_video_id(link)
     if not video_id or len(video_id) < 3:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+    if is_valid_media_file(file_path):
         return file_path
 
     # Primary: Shruti API
@@ -56,8 +82,11 @@ async def download_song(link: str) -> str:
                     with open(file_path, "wb") as f:
                         async for chunk in resp.content.iter_chunked(131072):
                             f.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    if is_valid_media_file(file_path):
                         return file_path
+                    else:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
     except Exception:
         if os.path.exists(file_path):
             try:
@@ -65,7 +94,7 @@ async def download_song(link: str) -> str:
             except Exception:
                 pass
 
-    yt_link = f"https://www.youtube.com/watch?v={video_id}" if not link.startswith("http") else link
+    yt_link = f"https://www.youtube.com/watch?v={video_id}"
 
     # Fallback 1: yt-dlp with cookies (if present)
     cookie_file = get_cookie_file()
@@ -92,7 +121,7 @@ async def download_song(link: str) -> str:
             await loop.run_in_executor(
                 None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
-            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            if is_valid_media_file(file_path):
                 return file_path
         except Exception:
             if os.path.exists(file_path):
@@ -124,7 +153,7 @@ async def download_song(link: str) -> str:
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
         )
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        if is_valid_media_file(file_path):
             return file_path
     except Exception:
         if os.path.exists(file_path):
@@ -137,13 +166,13 @@ async def download_song(link: str) -> str:
 
 
 async def download_video(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    video_id = extract_video_id(link)
     if not video_id or len(video_id) < 3:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+    if is_valid_media_file(file_path):
         return file_path
 
     # Primary: Shruti API
@@ -158,8 +187,11 @@ async def download_video(link: str) -> str:
                     with open(file_path, "wb") as f:
                         async for chunk in resp.content.iter_chunked(131072):
                             f.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    if is_valid_media_file(file_path):
                         return file_path
+                    else:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
     except Exception:
         if os.path.exists(file_path):
             try:
@@ -167,7 +199,7 @@ async def download_video(link: str) -> str:
             except Exception:
                 pass
 
-    yt_link = f"https://www.youtube.com/watch?v={video_id}" if not link.startswith("http") else link
+    yt_link = f"https://www.youtube.com/watch?v={video_id}"
 
     # Fallback 1: yt-dlp with cookies
     cookie_file = get_cookie_file()
@@ -187,7 +219,7 @@ async def download_video(link: str) -> str:
             await loop.run_in_executor(
                 None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
-            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            if is_valid_media_file(file_path):
                 return file_path
         except Exception:
             if os.path.exists(file_path):
@@ -212,7 +244,7 @@ async def download_video(link: str) -> str:
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
         )
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        if is_valid_media_file(file_path):
             return file_path
     except Exception:
         if os.path.exists(file_path):
