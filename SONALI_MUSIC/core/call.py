@@ -297,7 +297,10 @@ class Call(PyTgCalls):
         try:
             await self._play_on_assistant(assistant, chat_id, stream)
         except exceptions.NoActiveGroupCall:
-            raise AssistantErr(_["call_8"])
+            raise AssistantErr(
+                "❖ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴠɪᴅᴇᴏᴄʜᴀᴛ ғᴏᴜɴᴅ</b>\n\n"
+                "ᴘʟᴇᴀsᴇ sᴛᴀʀᴛ ᴀ ᴠɪᴅᴇᴏᴄʜᴀᴛ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ."
+            )
         except exceptions.NoAudioSourceFound:
             raise AssistantErr(
                 "❖ <b>ᴀᴜᴅɪᴏ sᴏᴜʀᴄᴇ ɴᴏᴛ ғᴏᴜɴᴅ</b>\n\n"
@@ -305,7 +308,10 @@ class Call(PyTgCalls):
                 "ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ᴡɪᴛʜ ᴀ ᴅɪғғᴇʀᴇɴᴛ ʟɪɴᴋ ᴏʀ ʀᴇsᴛᴀʀᴛ ᴛʜᴇ ᴠɪᴅᴇᴏᴄʜᴀᴛ."
             )
         except (ConnectionNotFound, TelegramServerError):
-            raise AssistantErr(_["call_10"])
+            raise AssistantErr(
+                "❖ <b>ᴄᴏɴɴᴇᴄᴛɪᴏɴ ᴇʀʀᴏʀ</b>\n\n"
+                "ғᴀɪʟᴇᴅ ᴛᴏ ᴄᴏɴɴᴇᴄᴛ ᴛᴏ ᴛᴇʟᴇɢʀᴀᴍ sᴇʀᴠᴇʀs. ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ."
+            )
         except Exception as e:
             raise AssistantErr(
                 f"❖ <b>ᴀssɪsᴛᴀɴᴛ ᴇʀʀᴏʀ</b>\n\n"

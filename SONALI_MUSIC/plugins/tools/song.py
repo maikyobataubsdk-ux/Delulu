@@ -253,7 +253,7 @@ async def song_download_cb(client, CallbackQuery, _):
     with yt_dlp.YoutubeDL(song_opts) as ytdl:
         x = ytdl.extract_info(yturl, download=False)
     title = (x["title"]).title()
-    title = re.sub("\W+", " ", title)
+    title = re.sub(r"\W+", " ", title)
     thumb_image_path = await CallbackQuery.message.download()
     duration = x["duration"]
     if stype == "video":
@@ -269,7 +269,7 @@ async def song_download_cb(client, CallbackQuery, _):
                 title=title,
             )
         except Exception as e:
-            return await mystic.edit_text(_["song_9"].format(e))
+            return await mystic.edit_text(_["song_9"].format(str(e)))
         med = InputMediaVideo(
             media=file_path,
             duration=duration,
@@ -300,7 +300,7 @@ async def song_download_cb(client, CallbackQuery, _):
                 title=title,
             )
         except Exception as e:
-            return await mystic.edit_text(_["song_9"].format(e))
+            return await mystic.edit_text(_["song_9"].format(str(e)))
         med = InputMediaAudio(
             media=filename,
             caption=title,
