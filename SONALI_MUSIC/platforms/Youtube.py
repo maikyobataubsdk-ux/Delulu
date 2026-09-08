@@ -1,7 +1,7 @@
 import asyncio
 import os
 import re
-from typing import Union
+from typing import Union, Optional
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
@@ -20,6 +20,9 @@ API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
 API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ")
 
 DOWNLOAD_DIR = "downloads"
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
 
 
 def get_cookie_file():
@@ -60,19 +63,41 @@ def is_valid_media_file(file_path: str, min_size: int = 1024) -> bool:
     return True
 
 
+def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]:
+    if not os.path.exists(DOWNLOAD_DIR):
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+        return None
+
+    exts = [".mp4", ".mkv", ".webm"] if is_video else [".mp3", ".m4a", ".webm", ".opus", ".mp4", ".aac"]
+    for ext in exts:
+        file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{ext}")
+        if is_valid_media_file(file_path):
+            return file_path
+
+    for f in os.listdir(DOWNLOAD_DIR):
+        if f.startswith(f"{video_id}."):
+            file_path = os.path.join(DOWNLOAD_DIR, f)
+            if is_valid_media_file(file_path):
+                return file_path
+
+    return None
+
+
 async def download_song(link: str) -> str:
     video_id = extract_video_id(link)
     if not video_id or len(video_id) < 3:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    existing_file = find_downloaded_file(video_id, is_video=False)
+    if existing_file:
+        return existing_file
+
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-    if is_valid_media_file(file_path):
-        return file_path
 
     # Primary: Shruti API
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
             async with session.get(
                 f"{API_URL}/download",
                 params={"url": video_id, "type": "audio", "api_key": API_KEY},
@@ -95,9 +120,9 @@ async def download_song(link: str) -> str:
                 pass
 
     yt_link = f"https://www.youtube.com/watch?v={video_id}"
+    cookie_file = get_cookie_file()
 
     # Fallback 1: yt-dlp with cookies (if present)
-    cookie_file = get_cookie_file()
     if cookie_file:
         try:
             ydl_opts = {
@@ -122,16 +147,15 @@ async def download_song(link: str) -> str:
             await loop.run_in_executor(
                 None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
-            if is_valid_media_file(file_path):
-                return file_path
+            downloaded = find_downloaded_file(video_id, is_video=False)
+            if downloaded:
+                return downloaded
         except Exception:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+            downloaded = find_downloaded_file(video_id, is_video=False)
+            if downloaded:
+                return downloaded
 
-    # Fallback 2: yt-dlp WITHOUT cookies (in case cookies are rate limited/blocked)
+    # Fallback 2: yt-dlp WITHOUT cookies
     try:
         ydl_opts_nocookie = {
             "format": "bestaudio/best",
@@ -154,14 +178,39 @@ async def download_song(link: str) -> str:
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
         )
-        if is_valid_media_file(file_path):
-            return file_path
+        downloaded = find_downloaded_file(video_id, is_video=False)
+        if downloaded:
+            return downloaded
     except Exception:
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        downloaded = find_downloaded_file(video_id, is_video=False)
+        if downloaded:
+            return downloaded
+
+    # Fallback 3: yt-dlp raw bestaudio without FFmpeg postprocessing if FFmpeg is unavailable
+    try:
+        ydl_opts_raw = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "nocheckcertificate": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
+        }
+        if cookie_file:
+            ydl_opts_raw["cookiefile"] = cookie_file
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, lambda: yt_dlp.YoutubeDL(ydl_opts_raw).download([yt_link])
+        )
+        downloaded = find_downloaded_file(video_id, is_video=False)
+        if downloaded:
+            return downloaded
+    except Exception:
+        downloaded = find_downloaded_file(video_id, is_video=False)
+        if downloaded:
+            return downloaded
 
     return None
 
@@ -172,13 +221,15 @@ async def download_video(link: str) -> str:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    existing_file = find_downloaded_file(video_id, is_video=True)
+    if existing_file:
+        return existing_file
+
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-    if is_valid_media_file(file_path):
-        return file_path
 
     # Primary: Shruti API
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
             async with session.get(
                 f"{API_URL}/download",
                 params={"url": video_id, "type": "video", "api_key": API_KEY},
@@ -201,14 +252,14 @@ async def download_video(link: str) -> str:
                 pass
 
     yt_link = f"https://www.youtube.com/watch?v={video_id}"
+    cookie_file = get_cookie_file()
 
     # Fallback 1: yt-dlp with cookies
-    cookie_file = get_cookie_file()
     if cookie_file:
         try:
             ydl_opts = {
                 "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "outtmpl": file_path,
+                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
@@ -221,20 +272,19 @@ async def download_video(link: str) -> str:
             await loop.run_in_executor(
                 None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
-            if is_valid_media_file(file_path):
-                return file_path
+            downloaded = find_downloaded_file(video_id, is_video=True)
+            if downloaded:
+                return downloaded
         except Exception:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+            downloaded = find_downloaded_file(video_id, is_video=True)
+            if downloaded:
+                return downloaded
 
     # Fallback 2: yt-dlp WITHOUT cookies
     try:
         ydl_opts_nocookie = {
             "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "outtmpl": file_path,
+            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
             "nocheckcertificate": True,
@@ -246,14 +296,13 @@ async def download_video(link: str) -> str:
         await loop.run_in_executor(
             None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
         )
-        if is_valid_media_file(file_path):
-            return file_path
+        downloaded = find_downloaded_file(video_id, is_video=True)
+        if downloaded:
+            return downloaded
     except Exception:
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        downloaded = find_downloaded_file(video_id, is_video=True)
+        if downloaded:
+            return downloaded
 
     return None
 
@@ -270,7 +319,7 @@ class YouTubeAPI:
         try:
             url = f"{self.base}{vidid}"
             oembed_url = f"{self.status}{url}&format=json"
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
                 async with session.get(oembed_url, timeout=10) as resp:
                     if resp.status == 200:
                         data = await resp.json()

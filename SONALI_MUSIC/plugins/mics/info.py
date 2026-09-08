@@ -31,22 +31,21 @@ async def get_userinfo_img(
     user_id: Union[int, str],    
     profile_path: Optional[str] = None
 ):
-    bg = Image.open(bg_path)
+    bg = Image.open(bg_path).convert("RGBA")
 
-    if profile_path:
-        img = Image.open(profile_path)
-        mask = Image.new("L", img.size, 0)
-        draw = ImageDraw.Draw(mask)
-        draw.pieslice([(0, 0), img.size], 0, 360, fill=255)
+    if profile_path and os.path.exists(profile_path):
+        try:
+            img = Image.open(profile_path).convert("RGBA")
+            mask = Image.new("L", img.size, 0)
+            draw = ImageDraw.Draw(mask)
+            draw.pieslice([(0, 0), img.size], 0, 360, fill=255)
 
-        circular_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        circular_img.paste(img, (0, 0), mask)
-        resized = circular_img.resize((534, 534))
-        bg.paste(resized, (607, 86), resized)
-
-    img_draw = ImageDraw.Draw(bg)
-
-    
+            circular_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            circular_img.paste(img, (0, 0), mask)
+            resized = circular_img.resize((534, 534))
+            bg.paste(resized, (607, 86), resized)
+        except Exception:
+            pass
 
     path = f"./userinfo_img_{user_id}.png"
     bg.save(path)
@@ -54,7 +53,6 @@ async def get_userinfo_img(
    
 
 # --------------------------------------------------------------------------------- #
-my_photo = "SONALI_MUSIC/assets/userinfospicy.png"
 bg_path = "SONALI_MUSIC/assets/userinfo.png"
 font_path = "SONALI_MUSIC/assets/hiroko.ttf"
 
@@ -94,6 +92,7 @@ async def userstatus(user_id):
           return "User is offline."
       elif x == enums.UserStatus.ONLINE:
          return "User is online."
+      return "User status unknown."
    except:
         return "**✦ sᴏᴍᴇᴛʜɪɴɢ ᴡʀᴏɴɢ ʜᴀᴘᴘᴇɴᴇᴅ !**"
     
@@ -104,6 +103,8 @@ async def userstatus(user_id):
 async def userinfo(_, message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    welcome_photo = None
+    photo = None
     
     if not message.reply_to_message and len(message.command) == 2:
         try:
@@ -112,69 +113,114 @@ async def userinfo(_, message):
             user = await app.get_users(user_id)
             status = await userstatus(user.id)
             id = user_info.id
-            dc_id = user.dc_id
+            dc_id = getattr(user, "dc_id", "N/A")
             name = user_info.first_name
-            username = user_info.username
+            username = user_info.username or "N/A"
             mention = user.mention
-            bio = user_info.bio
-            photo = await app.download_media(user.photo.big_file_id)
+            bio = user_info.bio or "N/A"
+            if user.photo:
+                try:
+                    photo = await app.download_media(user.photo.big_file_id)
+                except Exception:
+                    photo = None
             welcome_photo = await get_userinfo_img(
                 bg_path=bg_path,
                 font_path=font_path,
                 user_id=user_id,
                 profile_path=photo,
             )
-            await app.send_photo(chat_id, photo=my_photo, caption=INFO_TEXT.format(
+            await app.send_photo(chat_id, photo=welcome_photo, caption=INFO_TEXT.format(
                 id, username, mention, status, dc_id, bio), reply_to_message_id=message.id, reply_markup=InlineKeyboardMarkup(EVAA),)
         except Exception as e:
-            await message.reply_text(str(e))        
-      
+            await message.reply_text(str(e))
+        finally:
+            if welcome_photo and os.path.exists(welcome_photo):
+                try:
+                    os.remove(welcome_photo)
+                except Exception:
+                    pass
+            if photo and os.path.exists(photo):
+                try:
+                    os.remove(photo)
+                except Exception:
+                    pass
+
     elif not message.reply_to_message:
         try:
             user_info = await app.get_chat(user_id)
             user = await app.get_users(user_id)
             status = await userstatus(user.id)
             id = user_info.id
-            dc_id = user.dc_id
+            dc_id = getattr(user, "dc_id", "N/A")
             name = user_info.first_name
-            username = user_info.username
+            username = user_info.username or "N/A"
             mention = user.mention
-            bio = user_info.bio
-            photo = await app.download_media(user.photo.big_file_id)
+            bio = user_info.bio or "N/A"
+            if user.photo:
+                try:
+                    photo = await app.download_media(user.photo.big_file_id)
+                except Exception:
+                    photo = None
             welcome_photo = await get_userinfo_img(
                 bg_path=bg_path,
                 font_path=font_path,
                 user_id=user_id,
                 profile_path=photo,
             )
-            await app.send_photo(chat_id, photo=my_photo, caption=INFO_TEXT.format(
+            await app.send_photo(chat_id, photo=welcome_photo, caption=INFO_TEXT.format(
                 id, username, mention, status, dc_id, bio), reply_to_message_id=message.id, reply_markup=InlineKeyboardMarkup(EVAA),has_spoiler=True,)
         except Exception as e:
             await message.reply_text(str(e))
+        finally:
+            if welcome_photo and os.path.exists(welcome_photo):
+                try:
+                    os.remove(welcome_photo)
+                except Exception:
+                    pass
+            if photo and os.path.exists(photo):
+                try:
+                    os.remove(photo)
+                except Exception:
+                    pass
 
-            
     elif message.reply_to_message:
-        user_id = message.reply_to_message.from_user.id
+        target_user = message.reply_to_message.from_user
+        if not target_user:
+            return await message.reply_text("Could not fetch target user info.")
+        user_id = target_user.id
         try:
             user_info = await app.get_chat(user_id)
             user = await app.get_users(user_id)
             status = await userstatus(user.id)
             id = user_info.id
-            dc_id = user.dc_id
+            dc_id = getattr(user, "dc_id", "N/A")
             name = user_info.first_name
-            username = user_info.username
+            username = user_info.username or "N/A"
             mention = user.mention
-            bio = user_info.bio
-            photo = await app.download_media(message.reply_to_message.from_user.photo.big_file_id)
+            bio = user_info.bio or "N/A"
+            if target_user.photo:
+                try:
+                    photo = await app.download_media(target_user.photo.big_file_id)
+                except Exception:
+                    photo = None
             welcome_photo = await get_userinfo_img(
                 bg_path=bg_path,
                 font_path=font_path,
                 user_id=user_id,
                 profile_path=photo,
             )
-            await app.send_photo(chat_id, photo=my_photo, caption=INFO_TEXT.format(
+            await app.send_photo(chat_id, photo=welcome_photo, caption=INFO_TEXT.format(
                 id, username, mention, status, dc_id, bio), reply_to_message_id=message.id, reply_markup=InlineKeyboardMarkup(EVAA),has_spoiler=True,)
         except Exception as e:
             await message.reply_text(str(e))
-
-####
+        finally:
+            if welcome_photo and os.path.exists(welcome_photo):
+                try:
+                    os.remove(welcome_photo)
+                except Exception:
+                    pass
+            if photo and os.path.exists(photo):
+                try:
+                    os.remove(photo)
+                except Exception:
+                    pass

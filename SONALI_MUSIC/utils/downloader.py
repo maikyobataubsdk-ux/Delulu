@@ -13,7 +13,7 @@ def get_cookie_file():
 
 ytdl_init_opts = {
     "outtmpl": "downloads/%(id)s.%(ext)s",
-    "format": "bestaudio[ext=m4a]",
+    "format": "bestaudio/best",
     "geo_bypass": True,
     "nocheckcertificate": True,
     "js_runtimes": {"node": {}},
@@ -27,9 +27,21 @@ if _cookie_file:
 ytdl = yt_dlp.YoutubeDL(ytdl_init_opts)
 
 
+def find_downloaded_file_by_id(vid_id: str) -> str:
+    downloads_dir = "downloads"
+    if not os.path.exists(downloads_dir):
+        return None
+    for f in os.listdir(downloads_dir):
+        if f.startswith(f"{vid_id}."):
+            fp = path.join(downloads_dir, f)
+            if os.path.exists(fp) and os.path.getsize(fp) > 1024:
+                return fp
+    return None
+
+
 def download(url: str, my_hook) -> str:       
     ydl_optssx = {
-        'format' : 'bestaudio[ext=m4a]',
+        'format': 'bestaudio/best',
         "outtmpl": "downloads/%(id)s.%(ext)s",
         "geo_bypass": True,
         "nocheckcertificate": True,
@@ -55,10 +67,23 @@ def download(url: str, my_hook) -> str:
             return None
     try:
         x = yt_dlp.YoutubeDL(ydl_optssx)
-        x.add_progress_hook(my_hook)
+        if my_hook:
+            x.add_progress_hook(my_hook)
         dloader = x.download([url])
     except Exception as y_e:
         print(f"ytdl download error: {y_e}")
+        vid_id = info.get("id") if info else None
+        if vid_id:
+            found = find_downloaded_file_by_id(vid_id)
+            if found:
+                return found
         return None
-    xyz = path.join("downloads", f"{info['id']}.{info['ext']}")
+
+    vid_id = info.get("id") if info else None
+    if vid_id:
+        found = find_downloaded_file_by_id(vid_id)
+        if found:
+            return found
+
+    xyz = path.join("downloads", f"{info['id']}.{info['ext']}") if info and 'id' in info and 'ext' in info else None
     return xyz
