@@ -1,7 +1,8 @@
 import asyncio
 import os
+import traceback
 from datetime import datetime, timedelta
-from typing import Union
+from typing import Union, Optional
 
 from ntgcalls import ConnectionNotFound, TelegramServerError
 from pyrogram import Client
@@ -31,7 +32,7 @@ async def delete_old_message(chat_id: int):
         old = db.get(chat_id, [{}])[0].get("mystic")
         if old:
             await old.delete()
-    except:
+    except Exception:
         pass
 
 
@@ -108,7 +109,6 @@ class Call(PyTgCalls):
             ffmpeg_parameters=ffmpeg,
         )
 
-    
     async def _play_on_assistant(
         self,
         client: PyTgCalls,
@@ -122,37 +122,37 @@ class Call(PyTgCalls):
                 config=types.GroupCallConfig(auto_start=False),
             )
         except exceptions.NoActiveGroupCall:
+            LOGGER(__name__).error(f"NoActiveGroupCall error in chat {chat_id}")
             raise
         except exceptions.NoAudioSourceFound:
+            LOGGER(__name__).error(f"NoAudioSourceFound error in chat {chat_id}")
             raise
-        except (ConnectionNotFound, TelegramServerError):
+        except (ConnectionNotFound, TelegramServerError) as e:
+            LOGGER(__name__).error(f"Telegram connection server error in chat {chat_id}: {e}")
             raise
-        except Exception:
+        except Exception as e:
+            LOGGER(__name__).error(f"Unhandled PyTgCalls play error in chat {chat_id}: {e}\n{traceback.format_exc()}")
             raise
 
-    
     async def pause_stream(self, chat_id: int):
         await delete_old_message(chat_id)
         assistant = await group_assistant(self, chat_id)
         await assistant.pause(chat_id)
 
-    
     async def resume_stream(self, chat_id: int):
         await delete_old_message(chat_id)
         assistant = await group_assistant(self, chat_id)
         await assistant.resume(chat_id)
 
-    
     async def stop_stream(self, chat_id: int):
         await delete_old_message(chat_id)
         assistant = await group_assistant(self, chat_id)
         try:
             await _clear_(chat_id)
             await assistant.leave_call(chat_id, close=False)
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER(__name__).error(f"stop_stream exception in chat {chat_id}: {e}")
 
-    
     async def stop_stream_force(self, chat_id: int):
         for string, client in [
             (config.STRING1, self.one),
@@ -169,10 +169,9 @@ class Call(PyTgCalls):
                 pass
         try:
             await _clear_(chat_id)
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER(__name__).error(f"stop_stream_force _clear_ exception in chat {chat_id}: {e}")
 
-    
     async def speedup_stream(self, chat_id: int, file_path, speed, playing):
         assistant = await group_assistant(self, chat_id)
         if str(speed) != "1.0":
@@ -243,10 +242,9 @@ class Call(PyTgCalls):
         await remove_active_chat(chat_id)
         try:
             await assistant.leave_call(chat_id, close=False)
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER(__name__).error(f"force_stop_stream exception in chat {chat_id}: {e}")
 
-    
     async def skip_stream(
         self,
         chat_id: int,
@@ -258,7 +256,6 @@ class Call(PyTgCalls):
         stream = self._build_stream(link, video=bool(video))
         await self._play_on_assistant(assistant, chat_id, stream)
 
-    
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
         assistant = await group_assistant(self, chat_id)
         ffmpeg = f"-ss {to_seek} -to {duration}"
@@ -270,7 +267,6 @@ class Call(PyTgCalls):
         )
         await self._play_on_assistant(assistant, chat_id, stream)
 
-    
     async def stream_call(self, link):
         assistant = await group_assistant(self, config.LOGGER_ID)
         stream = self._build_stream(link, video=True)
@@ -281,7 +277,6 @@ class Call(PyTgCalls):
         except Exception:
             pass
 
-    
     async def join_call(
         self,
         chat_id: int,
@@ -297,22 +292,26 @@ class Call(PyTgCalls):
         try:
             await self._play_on_assistant(assistant, chat_id, stream)
         except exceptions.NoActiveGroupCall:
+            LOGGER(__name__).warning(f"No active group call in chat_id: {chat_id}")
             raise AssistantErr(
                 "❖ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴠɪᴅᴇᴏᴄʜᴀᴛ ғᴏᴜɴᴅ</b>\n\n"
                 "ᴘʟᴇᴀsᴇ sᴛᴀʀᴛ ᴀ ᴠɪᴅᴇᴏᴄʜᴀᴛ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ."
             )
         except exceptions.NoAudioSourceFound:
+            LOGGER(__name__).error(f"No audio source found for link '{link}' in chat_id: {chat_id}")
             raise AssistantErr(
                 "❖ <b>ᴀᴜᴅɪᴏ sᴏᴜʀᴄᴇ ɴᴏᴛ ғᴏᴜɴᴅ</b>\n\n"
                 "ᴛʜᴇ ᴀssɪsᴛᴀɴᴛ ᴄᴏᴜʟᴅ ɴᴏᴛ ғɪɴᴅ ᴀ ᴠᴀʟɪᴅ ᴀᴜᴅɪᴏ/ᴠɪᴅᴇᴏ sᴏᴜʀᴄᴇ ᴛᴏ sᴛʀᴇᴀᴍ. "
                 "ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ᴡɪᴛʜ ᴀ ᴅɪғғᴇʀᴇɴᴛ ʟɪɴᴋ ᴏʀ ʀᴇsᴛᴀʀᴛ ᴛʜᴇ ᴠɪᴅᴇᴏᴄʜᴀᴛ."
             )
-        except (ConnectionNotFound, TelegramServerError):
+        except (ConnectionNotFound, TelegramServerError) as e:
+            LOGGER(__name__).error(f"Telegram server connection error in chat_id {chat_id}: {e}")
             raise AssistantErr(
                 "❖ <b>ᴄᴏɴɴᴇᴄᴛɪᴏɴ ᴇʀʀᴏʀ</b>\n\n"
                 "ғᴀɪʟᴇᴅ ᴛᴏ ᴄᴏɴɴᴇᴄᴛ ᴛᴏ ᴛᴇʟᴇɢʀᴀᴍ sᴇʀᴠᴇʀs. ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ."
             )
         except Exception as e:
+            LOGGER(__name__).error(f"Assistant error in join_call for chat_id {chat_id}: {e}\n{traceback.format_exc()}")
             raise AssistantErr(
                 f"❖ <b>ᴀssɪsᴛᴀɴᴛ ᴇʀʀᴏʀ</b>\n\n"
                 f"ᴀɴ ᴇxᴄᴇᴘᴛɪᴏɴ ᴏᴄᴄᴜʀʀᴇᴅ ᴡʜɪʟᴇ ᴘʀᴏᴄᴇssɪɴɢ ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ.\n\n"
@@ -325,11 +324,13 @@ class Call(PyTgCalls):
             await add_active_video_chat(chat_id)
         if await is_autoend():
             counter[chat_id] = {}
-            users = len(await assistant.get_participants(chat_id))
-            if users == 1:
-                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            try:
+                users = len(await assistant.get_participants(chat_id))
+                if users == 1:
+                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            except Exception as e:
+                LOGGER(__name__).error(f"Error checking participants in chat_id {chat_id}: {e}")
 
-    
     async def change_stream(self, client: PyTgCalls, chat_id: int):
         await delete_old_message(chat_id)
         check = db.get(chat_id)
@@ -348,9 +349,10 @@ class Call(PyTgCalls):
                     buttons = InlineKeyboardMarkup(
                         [
                             [
-                                                                InlineKeyboardButton(
+                                InlineKeyboardButton(
                                     "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙", url=f"https://t.me/{app.username}?startgroup=true"
-                                )],
+                                )
+                            ],
                             [
                                 InlineKeyboardButton(
                                     "⋞ ᴄʟᴏsє ⋟", callback_data="close_message"
@@ -359,26 +361,25 @@ class Call(PyTgCalls):
                         ]
                     )
                     await app.send_message(
-    chat_id,
-    """
-🎵 𝐓ʜᴇ 𝐌ᴜsɪᴄ 𝐐ᴜᴇᴜᴇ 𝐇ᴀ𝐬 𝐄ɴᴅᴇᴅ.
-➤ 𝐔𝐬𝐞 /play 𝐓𝐨 𝐀𝐝𝐝 𝐌𝐨𝐫𝐞 𝐒𝐨𝐧𝐠𝐬 🎶
-""",
-    reply_markup=buttons,
-)
-                except:
+                        chat_id,
+                        "🎵 𝐓ʜᴇ 𝐌ᴜsɪᴄ 𝐐ᴜᴇᴜᴇ 𝐇ᴀ𝐬 𝐄ɴᴅᴇᴅ.\n➤ 𝐔𝐬𝐞 /play 𝐓𝐨 𝐀𝐝𝐝 𝐌𝐨𝐫𝐞 𝐒𝐨𝐧𝐠𝐬 🎶\n",
+                        reply_markup=buttons,
+                    )
+                except Exception:
                     pass
                 return await client.leave_call(chat_id, close=False)
-        except Exception:
+        except Exception as e:
+            LOGGER(__name__).error(f"Error checking queue in change_stream for chat_id {chat_id}: {e}")
             try:
                 await _clear_(chat_id)
                 try:
                     buttons = InlineKeyboardMarkup(
                         [
                             [
-                                                                InlineKeyboardButton(
+                                InlineKeyboardButton(
                                     "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙", url=f"https://t.me/{app.username}?startgroup=true"
-                                )],
+                                )
+                            ],
                             [
                                 InlineKeyboardButton(
                                     "⋞ ᴄʟᴏsє ⋟", callback_data="close_message"
@@ -387,18 +388,16 @@ class Call(PyTgCalls):
                         ]
                     )
                     await app.send_message(
-    chat_id,
-    """
-🎵 𝐓ʜᴇ 𝐌ᴜsɪᴄ 𝐐ᴜᴇᴜᴇ 𝐇ᴀ𝐬 𝐄ɴᴅᴇᴅ.
-➤ 𝐔𝐬𝐞 /play 𝐓𝐨 𝐀𝐝𝐝 𝐌𝐨𝐫𝐞 𝐒𝐨𝐧𝐠𝐬 🎶
-""",
-    reply_markup=buttons,
-)
-                except:
+                        chat_id,
+                        "🎵 𝐓ʜᴇ 𝐌ᴜsɪᴄ 𝐐ᴜᴇᴜᴇ 𝐇ᴀ𝐬 𝐄ɴᴅᴇᴅ.\n➤ 𝐔𝐬𝐞 /play 𝐓𝐨 𝐀𝐝𝐝 𝐌𝐨𝐫𝐞 𝐒𝐨𝐧𝐠𝐬 🎶\n",
+                        reply_markup=buttons,
+                    )
+                except Exception:
                     pass
                 return await client.leave_call(chat_id, close=False)
             except Exception:
                 return
+
         queued = check[0]["file"]
         language = await get_lang(chat_id)
         _ = get_string(language)
@@ -415,9 +414,11 @@ class Call(PyTgCalls):
             db[chat_id][0]["speed_path"] = None
             db[chat_id][0]["speed"] = 1.0
         video = True if str(streamtype) == "video" else False
+
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
             if n == 0:
+                LOGGER(__name__).error(f"Live video stream fetch failed for {videoid} in chat {chat_id}")
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -425,7 +426,8 @@ class Call(PyTgCalls):
             stream = self._build_stream(link, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
-            except Exception:
+            except Exception as e:
+                LOGGER(__name__).error(f"Failed to play live stream in change_stream for chat {chat_id}: {e}")
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -448,6 +450,7 @@ class Call(PyTgCalls):
             db[chat_id][0]["markup"] = "tg"
         elif "vid_" in queued:
             mystic = await app.send_message(original_chat_id, _["call_7"])
+            file_path, direct = None, False
             try:
                 file_path, direct = await YouTube.download(
                     videoid,
@@ -455,10 +458,22 @@ class Call(PyTgCalls):
                     videoid=True,
                     video=video,
                 )
-            except Exception:
-                return await mystic.edit_text(
-                    _["call_6"], disable_web_page_preview=True
-                )
+            except Exception as e:
+                LOGGER(__name__).error(f"YouTube.download error in change_stream for {videoid}: {e}")
+
+            if not file_path and video:
+                LOGGER(__name__).info(f"Video stream failed in change_stream for {videoid}, retrying audio-only")
+                try:
+                    file_path, direct = await YouTube.download(
+                        videoid,
+                        mystic,
+                        videoid=True,
+                        video=None,
+                    )
+                    video = False
+                except Exception as e:
+                    LOGGER(__name__).error(f"YouTube audio download error in change_stream for {videoid}: {e}")
+
             if not file_path:
                 return await mystic.edit_text(
                     _["call_6"], disable_web_page_preview=True
@@ -466,7 +481,8 @@ class Call(PyTgCalls):
             stream = self._build_stream(file_path, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
-            except Exception:
+            except Exception as e:
+                LOGGER(__name__).error(f"Failed to play on assistant in change_stream for chat {chat_id}: {e}")
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -493,7 +509,8 @@ class Call(PyTgCalls):
             stream = self._build_stream(videoid, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
-            except Exception:
+            except Exception as e:
+                LOGGER(__name__).error(f"Failed to play index stream in chat {chat_id}: {e}")
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -512,7 +529,8 @@ class Call(PyTgCalls):
             stream = self._build_stream(queued, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
-            except Exception:
+            except Exception as e:
+                LOGGER(__name__).error(f"Failed to play local stream '{queued}' in chat {chat_id}: {e}")
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -563,7 +581,6 @@ class Call(PyTgCalls):
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
 
-    
     async def ping(self):
         pings = []
         if config.STRING1:
@@ -578,7 +595,6 @@ class Call(PyTgCalls):
             pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0"
 
-    
     async def start(self):
         LOGGER(__name__).info("Starting PyTgCalls Client...\n")
         if config.STRING1:
@@ -592,7 +608,6 @@ class Call(PyTgCalls):
         if config.STRING5:
             await self.five.start()
 
-    
     async def decorators(self):
         for string, client in [
             (config.STRING1, self.one),
