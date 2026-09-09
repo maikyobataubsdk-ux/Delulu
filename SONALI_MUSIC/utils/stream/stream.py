@@ -49,7 +49,7 @@ async def stream(
                     vidid,
                 ) = await YouTube.details(search, False if spotify else True)
             except Exception as e:
-                LOGGER(__name__).error(f"Error fetching details for playlist item {search}: {e}")
+                LOGGER(__name__).error(f"[YT-EXTRACT] Error fetching details for playlist item {search}: {e}")
                 continue
             if str(duration_min) == "None":
                 continue
@@ -81,17 +81,17 @@ async def stream(
                         vidid, mystic, video=status, videoid=True
                     )
                 except Exception as e:
-                    LOGGER(__name__).error(f"Playlist track download failed for {vidid}: {e}\n{traceback.format_exc()}")
+                    LOGGER(__name__).error(f"[YT-DOWNLOAD] Playlist track download failed for {vidid}: {e}\n{traceback.format_exc()}")
 
                 if not file_path and status:
-                    LOGGER(__name__).info(f"Retrying playlist track {vidid} in audio-only mode")
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Retrying playlist track {vidid} in audio-only mode")
                     try:
                         file_path, direct = await YouTube.download(
                             vidid, mystic, video=None, videoid=True
                         )
                         status = None
                     except Exception as e:
-                        LOGGER(__name__).error(f"Playlist track audio fallback download failed for {vidid}: {e}")
+                        LOGGER(__name__).error(f"[YT-DOWNLOAD] Playlist track audio fallback download failed for {vidid}: {e}")
 
                 if not file_path:
                     continue
@@ -133,7 +133,7 @@ async def stream(
                 db[chat_id][0]["markup"] = "stream"
                 count += 1
         if count == 0:
-            raise AssistantErr(_["play_14"])
+            raise AssistantErr("❌ Couldn't find or play tracks from that playlist.")
         else:
             link = await SonaBin(msg)
             lines = msg.count("\n")
@@ -163,20 +163,20 @@ async def stream(
                 vidid, mystic, videoid=True, video=status
             )
         except Exception as e:
-            LOGGER(__name__).error(f"YouTube download error for {vidid}: {e}\n{traceback.format_exc()}")
+            LOGGER(__name__).error(f"[YT-DOWNLOAD] YouTube download error for {vidid}: {e}\n{traceback.format_exc()}")
 
         if not file_path and status:
-            LOGGER(__name__).info(f"Video download failed for {vidid}, attempting audio-only fallback...")
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Video download failed for {vidid}, attempting audio-only fallback...")
             try:
                 file_path, direct = await YouTube.download(
                     vidid, mystic, videoid=True, video=None
                 )
                 status = None
             except Exception as e:
-                LOGGER(__name__).error(f"YouTube audio fallback download error for {vidid}: {e}\n{traceback.format_exc()}")
+                LOGGER(__name__).error(f"[YT-DOWNLOAD] YouTube audio fallback download error for {vidid}: {e}\n{traceback.format_exc()}")
 
         if not file_path:
-            raise AssistantErr(_["play_14"])
+            raise AssistantErr("❌ This track couldn't be played right now. Try another song.")
 
         if await is_active_chat(chat_id):
             await put_queue(
@@ -370,7 +370,7 @@ async def stream(
                 db[chat_id] = []
             n, file_path = await YouTube.video(link)
             if n == 0:
-                raise AssistantErr(_["str_3"])
+                raise AssistantErr("❌ Live stream playback failed. Try another link.")
             await Sona.join_call(
                 chat_id,
                 original_chat_id,
