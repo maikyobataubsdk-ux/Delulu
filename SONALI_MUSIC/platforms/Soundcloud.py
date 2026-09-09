@@ -1,25 +1,25 @@
+import os
 from os import path
-
 from yt_dlp import YoutubeDL
-
 from SONALI_MUSIC.utils.formatters import seconds_to_min
+from SONALI_MUSIC.utils.youtube_utils import get_cookie_file, analyze_cookies
 
 
 class SoundAPI:
     def __init__(self):
-        from SONALI_MUSIC.platforms.Youtube import get_cookie_file
         self.opts = {
             "outtmpl": "downloads/%(id)s.%(ext)s",
             "format": "best",
-            "retries": 3,
+            "retries": 5,
+            "socket_timeout": 20,
             "nooverwrites": False,
             "continuedl": True,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
         }
-        cookie_file = get_cookie_file()
-        if cookie_file:
-            self.opts["cookiefile"] = cookie_file
+        cookie_analysis = analyze_cookies()
+        if cookie_analysis["status"] == "VALID" and cookie_analysis["cookie_path"]:
+            self.opts["cookiefile"] = os.path.abspath(cookie_analysis["cookie_path"])
 
     async def valid(self, link: str):
         if "soundcloud" in link:

@@ -3,23 +3,18 @@ from os import path
 import yt_dlp
 from yt_dlp.utils import DownloadError
 from SONALI_MUSIC import LOGGER
-
-
-def get_cookie_file():
-    for p in ["cookies/cookies.txt", "SONALI_MUSIC/assets/cookies.txt", "assets/cookies.txt"]:
-        if os.path.exists(p) and os.path.getsize(p) > 0:
-            return p
-    return None
+from SONALI_MUSIC.utils.youtube_utils import get_cookie_file, analyze_cookies, classify_ytdl_error
 
 
 def get_downloader_opts(cookie_file=None):
     opts = {
         "outtmpl": "downloads/%(id)s.%(ext)s",
         "format": "bestaudio/best",
-        "geo_bypass": True,
-        "nocheckcertificate": True,
         "quiet": True,
+        "noplaylist": True,
         "no_warnings": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
         "socket_timeout": 20,
         "retries": 5,
         "fragment_retries": 5,
@@ -30,7 +25,7 @@ def get_downloader_opts(cookie_file=None):
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
     if cookie_file:
-        opts["cookiefile"] = cookie_file
+        opts["cookiefile"] = os.path.abspath(cookie_file)
     return opts
 
 
@@ -48,7 +43,8 @@ def find_downloaded_file_by_id(vid_id: str) -> str:
 
 def download(url: str, my_hook) -> str:
     os.makedirs("downloads", exist_ok=True)
-    cookie_file = get_cookie_file()
+    cookie_analysis = analyze_cookies()
+    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
     ytdl_opts = get_downloader_opts(cookie_file)
 
     info = None
@@ -56,7 +52,8 @@ def download(url: str, my_hook) -> str:
         ydl = yt_dlp.YoutubeDL(ytdl_opts)
         info = ydl.extract_info(url, False)
     except Exception as e:
-        LOGGER(__name__).error(f"Downloader initial extract_info error: {e}")
+        err_type, err_msg = classify_ytdl_error(e)
+        LOGGER(__name__).error(f"Downloader initial extract_info error ({err_type}): {e}")
         if cookie_file:
             try:
                 opts_nocookie = get_downloader_opts(cookie_file=None)

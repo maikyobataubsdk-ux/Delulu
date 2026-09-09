@@ -10,10 +10,12 @@ from SONALI_MUSIC.core.call import Sona
 from SONALI_MUSIC.misc import sudo
 from SONALI_MUSIC.plugins import ALL_MODULES
 from SONALI_MUSIC.utils.database import get_banned_users, get_gbanned
+from SONALI_MUSIC.utils.youtube_utils import log_startup_diagnostics
 from config import BANNED_USERS
 
 
 async def init():
+    log_startup_diagnostics()
     if (
         not config.STRING1
         and not config.STRING2

@@ -26,6 +26,7 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
+from SONALI_MUSIC.utils.youtube_utils import analyze_cookies, classify_ytdl_error
 
 # Command
 SONG_COMMAND = ["song"]
@@ -241,25 +242,49 @@ async def song_download_cb(client, CallbackQuery, _):
     stype, format_id, vidid = callback_request.split("|")
     mystic = await CallbackQuery.edit_message_text(_["song_8"])
     yturl = f"https://www.youtube.com/watch?v={vidid}"
-    from SONALI_MUSIC.platforms.Youtube import get_cookie_file
+
+    cookie_analysis = analyze_cookies()
+    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
+
     song_opts = {
+        "format": "bestaudio/best",
         "quiet": True,
+        "noplaylist": True,
         "no_warnings": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "socket_timeout": 20,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_retries": 3,
+        "ignoreerrors": True,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
-    cookie_file = get_cookie_file()
     if cookie_file:
-        song_opts["cookiefile"] = cookie_file
+        song_opts["cookiefile"] = os.path.abspath(cookie_file)
+
+    x = None
     try:
         with yt_dlp.YoutubeDL(song_opts) as ytdl:
             x = ytdl.extract_info(yturl, download=False)
-    except Exception:
-        # Fallback without cookie if cookie is blocked
+    except Exception as e:
+        err_type, err_msg = classify_ytdl_error(e)
+        if err_type == "AUTH_REQUIRED":
+            return await mystic.edit_text("⚠️ YouTube authentication required or expired. Please update cookies.txt.")
         song_opts_nocookie = {
+            "format": "bestaudio/best",
             "quiet": True,
+            "noplaylist": True,
             "no_warnings": True,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+            "socket_timeout": 20,
+            "retries": 5,
+            "fragment_retries": 5,
+            "extractor_retries": 3,
+            "ignoreerrors": True,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
             "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
@@ -267,16 +292,21 @@ async def song_download_cb(client, CallbackQuery, _):
         try:
             with yt_dlp.YoutubeDL(song_opts_nocookie) as ytdl:
                 x = ytdl.extract_info(yturl, download=False)
-        except Exception as e:
-            return await mystic.edit_text(_["song_9"].format(str(e)))
-    title = (x["title"]).title()
+        except Exception as e_nc:
+            return await mystic.edit_text(_["song_9"].format(str(e_nc)))
+
+    if not x:
+        return await mystic.edit_text(_["song_9"].format("Metadata extraction failed"))
+
+    title = (x.get("title") or "Track").title()
     title = re.sub(r"\W+", " ", title)
     thumb_image_path = await CallbackQuery.message.download()
-    duration = x["duration"]
+    duration = x.get("duration", 0)
+    uploader = x.get("uploader", "Unknown Uploader")
+
     if stype == "video":
-        thumb_image_path = await CallbackQuery.message.download()
-        width = CallbackQuery.message.photo.width
-        height = CallbackQuery.message.photo.height
+        width = CallbackQuery.message.photo.width if CallbackQuery.message.photo else 1280
+        height = CallbackQuery.message.photo.height if CallbackQuery.message.photo else 720
         try:
             file_path = await YouTube.download(
                 yturl,
@@ -306,7 +336,8 @@ async def song_download_cb(client, CallbackQuery, _):
         except Exception as e:
             print(e)
             return await mystic.edit_text(_["song_10"])
-        os.remove(file_path)
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
     elif stype == "audio":
         try:
             filename = await YouTube.download(
@@ -323,7 +354,7 @@ async def song_download_cb(client, CallbackQuery, _):
             caption=title,
             thumb=thumb_image_path,
             title=title,
-            performer=x["uploader"],
+            performer=uploader,
         )
         await mystic.edit_text(_["song_11"])
         await app.send_chat_action(
@@ -335,8 +366,8 @@ async def song_download_cb(client, CallbackQuery, _):
         except Exception as e:
             print(e)
             return await mystic.edit_text(_["song_10"])
-        os.remove(filename)
-
+        if filename and os.path.exists(filename):
+            os.remove(filename)
 
 
 @app.on_message(filters.command(["ig"], ["/", "!", "."]))
@@ -365,9 +396,6 @@ async def download_instareels(c: app, m: Message):
             except Exception:
                 await m.reply_text("I am unable to reach to this reel.")
 
-
-
-######
 
 @app.on_message(filters.command(["reel"], ["/", "!", "."]))
 async def instagram_reel(client, message):
