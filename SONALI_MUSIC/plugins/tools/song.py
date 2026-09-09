@@ -104,7 +104,7 @@ async def song_commad_private(client, message: Message, _):
             vidid,
         ) = await YouTube.details(query)
     except:
-        return await mystic.edit_text(_["play_3"])
+        return await mystic.edit_text("❌ Couldn't find that track.")
     if str(duration_min) == "None":
         return await mystic.edit_text(_["song_3"])
     if int(duration_sec) > SONG_DOWNLOAD_DURATION_LIMIT:
@@ -272,7 +272,7 @@ async def song_download_cb(client, CallbackQuery, _):
     except Exception as e:
         err_type, err_msg = classify_ytdl_error(e)
         if err_type == "AUTH_REQUIRED":
-            return await mystic.edit_text("⚠️ YouTube authentication required or expired. Please update cookies.txt.")
+            return await mystic.edit_text("⚠️ YouTube authentication is currently unavailable. Trying another playback method...")
         song_opts_nocookie = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -292,11 +292,11 @@ async def song_download_cb(client, CallbackQuery, _):
         try:
             with yt_dlp.YoutubeDL(song_opts_nocookie) as ytdl:
                 x = ytdl.extract_info(yturl, download=False)
-        except Exception as e_nc:
-            return await mystic.edit_text(_["song_9"].format(str(e_nc)))
+        except Exception:
+            return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
 
     if not x:
-        return await mystic.edit_text(_["song_9"].format("Metadata extraction failed"))
+        return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
 
     title = (x.get("title") or "Track").title()
     title = re.sub(r"\W+", " ", title)
@@ -315,8 +315,8 @@ async def song_download_cb(client, CallbackQuery, _):
                 format_id=format_id,
                 title=title,
             )
-        except Exception as e:
-            return await mystic.edit_text(_["song_9"].format(str(e)))
+        except Exception:
+            return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
         med = InputMediaVideo(
             media=file_path,
             duration=duration,
@@ -347,8 +347,8 @@ async def song_download_cb(client, CallbackQuery, _):
                 format_id=format_id,
                 title=title,
             )
-        except Exception as e:
-            return await mystic.edit_text(_["song_9"].format(str(e)))
+        except Exception:
+            return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
         med = InputMediaAudio(
             media=filename,
             caption=title,

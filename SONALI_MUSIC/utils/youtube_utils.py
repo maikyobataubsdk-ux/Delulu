@@ -7,9 +7,16 @@ import yt_dlp
 from SONALI_MUSIC import LOGGER
 
 REQUIRED_AUTH_COOKIES = {"SID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID"}
+VISITOR_COOKIE_NAMES = {"PREF", "SOCS", "YSC", "VISITOR_INFO1_LIVE", "VISITOR_PRIVACY_METADATA", "__Secure-ROLLOUT_TOKEN", "GPS"}
 
 
 def get_cookie_file() -> Optional[str]:
+    env_cookie = os.environ.get("YOUTUBE_COOKIES")
+    if env_cookie:
+        abs_env = os.path.abspath(env_cookie)
+        if os.path.exists(abs_env) and os.path.getsize(abs_env) > 0:
+            return abs_env
+
     for path in ["cookies/cookies.txt", "SONALI_MUSIC/assets/cookies.txt", "assets/cookies.txt"]:
         abs_path = os.path.abspath(path)
         if os.path.exists(abs_path) and os.path.getsize(abs_path) > 0:
@@ -26,7 +33,9 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
         "valid_format": False,
         "youtube_count": 0,
         "auth_count": 0,
-        "missing_auth_cookies": list(REQUIRED_AUTH_COOKIES),
+        "missing_auth_cookies": sorted(list(REQUIRED_AUTH_COOKIES)),
+        "found_auth_cookie_names": [],
+        "found_visitor_cookie_names": [],
         "status": "MISSING",
         "cookie_path": cookie_path,
         "file_size": 0,
@@ -45,6 +54,7 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
     now = time.time()
     yt_cookie_names = set()
     found_auth_cookies = set()
+    found_visitor_cookies = set()
     has_netscape_header = False
     valid_lines = 0
 
@@ -80,14 +90,20 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
                         yt_cookie_names.add(cookie_name)
                         if cookie_name in REQUIRED_AUTH_COOKIES:
                             found_auth_cookies.add(cookie_name)
+                        if cookie_name in VISITOR_COOKIE_NAMES:
+                            found_visitor_cookies.add(cookie_name)
 
         result["valid_format"] = has_netscape_header or (valid_lines > 0)
         result["youtube_count"] = len(yt_cookie_names)
         result["auth_count"] = len(found_auth_cookies)
         result["missing_auth_cookies"] = sorted(list(REQUIRED_AUTH_COOKIES - found_auth_cookies))
+        result["found_auth_cookie_names"] = sorted(list(found_auth_cookies))
+        result["found_visitor_cookie_names"] = sorted(list(found_visitor_cookies))
 
         if result["auth_count"] == len(REQUIRED_AUTH_COOKIES) and result["youtube_count"] > 0:
             result["status"] = "VALID"
+        elif result["youtube_count"] > 0:
+            result["status"] = "INCOMPLETE"
         else:
             result["status"] = "INVALID"
 
@@ -114,7 +130,6 @@ def check_bgutil_and_potoken() -> Dict[str, Any]:
 
     bgutil_server_running = False
     try:
-        # Check if local bgutil server or provider process is running
         res = subprocess.run(["pgrep", "-f", "bgutil"], capture_output=True, text=True)
         if res.returncode == 0 and res.stdout.strip():
             bgutil_server_running = True
@@ -164,8 +179,16 @@ def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, s
     msg = str(error_msg_or_exc)
     msg_lower = msg.lower()
 
-    if "login_required" in msg_lower or "sign in to confirm you're not a bot" in msg_lower or "use --cookies" in msg_lower:
-        return "AUTH_REQUIRED", "Missing/expired authentication cookies."
+    if (
+        "login_required" in msg_lower
+        or "sign in to confirm you're not a bot" in msg_lower
+        or "use --cookies" in msg_lower
+        or "no formats found" in msg_lower
+        or "player response login_required" in msg_lower
+        or "private video" in msg_lower
+    ):
+        return "AUTH_REQUIRED", "YouTube authentication required or missing/expired cookies."
+
     if "po_token" in msg_lower or "pot" in msg_lower or "botguard" in msg_lower:
         return "POTOKEN_REQUIRED", "PO Token provider failure or token missing."
 
@@ -179,21 +202,26 @@ def log_startup_diagnostics() -> Dict[str, Any]:
     pot_info = check_bgutil_and_potoken()
 
     LOGGER(__name__).info("======== YouTube Extraction System Diagnostics ========")
-    LOGGER(__name__).info(f"yt-dlp Version          : {yt_ver}")
-    LOGGER(__name__).info(f"FFmpeg Status           : {ff_ver}")
-    LOGGER(__name__).info(f"Cookie Path             : {cookie_info['cookie_path'] or 'None'}")
-    LOGGER(__name__).info(f"Cookie File Exists      : {cookie_info['exists']}")
-    LOGGER(__name__).info(f"Cookie File Size        : {cookie_info['file_size']} bytes")
-    LOGGER(__name__).info(f"YouTube Cookies Count   : {cookie_info['youtube_count']}")
-    LOGGER(__name__).info(f"Auth Cookies Count      : {cookie_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}")
-    LOGGER(__name__).info(f"Missing Auth Cookies    : {', '.join(cookie_info['missing_auth_cookies']) if cookie_info['missing_auth_cookies'] else 'None'}")
-    LOGGER(__name__).info(f"Cookie Overall Status   : {cookie_info['status']}")
-    LOGGER(__name__).info(f"PO Token Provider Status: {pot_info['potoken_provider_status']}")
-    LOGGER(__name__).info("=======================================================")
+    LOGGER(__name__).info(f"[YT-DIAG] yt-dlp Version          : {yt_ver}")
+    LOGGER(__name__).info(f"[YT-DIAG] FFmpeg Status           : {ff_ver}")
+    LOGGER(__name__).info(f"[YT-AUTH] Cookie file             : {cookie_info['cookie_path'] or 'None'}")
+    LOGGER(__name__).info(f"[YT-AUTH] Cookie file Exists      : {cookie_info['exists']}")
+    LOGGER(__name__).info(f"[YT-AUTH] Cookie count            : {cookie_info['youtube_count']}")
+    LOGGER(__name__).info(f"[YT-AUTH] Auth cookies count      : {cookie_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}")
 
-    if cookie_info["status"] != "VALID":
-        LOGGER(__name__).warning("⚠️ YouTube authentication cookies are missing or invalid in cookies.txt!")
-        LOGGER(__name__).warning("⚠️ Authentication cookies required: " + ", ".join(REQUIRED_AUTH_COOKIES))
+    if cookie_info["status"] == "VALID":
+        LOGGER(__name__).info("[YT-AUTH] Auth cookies            : VALID")
+        LOGGER(__name__).info("[YT-AUTH] Status                  : VALID")
+    elif cookie_info["youtube_count"] > 0:
+        LOGGER(__name__).warning("[YT-AUTH] Auth cookies            : MISSING / INCOMPLETE")
+        LOGGER(__name__).warning("[YT-AUTH] Status                  : INCOMPLETE")
+        LOGGER(__name__).warning("[YT-AUTH] YouTube cookies detected but authenticated session is unavailable.")
+    else:
+        LOGGER(__name__).warning("[YT-AUTH] Auth cookies            : MISSING")
+        LOGGER(__name__).warning("[YT-AUTH] Status                  : MISSING")
+
+    LOGGER(__name__).info(f"[YT-PO] PO Token Provider Status : {pot_info['potoken_provider_status']}")
+    LOGGER(__name__).info("=======================================================")
 
     return {
         "yt_version": yt_ver,
@@ -236,15 +264,16 @@ def get_cookiecheck_status() -> str:
 
     msg = (
         "<b>🍪 Cookie Validation Status</b>\n\n"
+        f"<b>Cookie Path:</b> <code>{cookie_info['cookie_path'] or 'None'}</code>\n"
         f"<b>Cookie File:</b> {file_ok}\n"
         f"<b>Format:</b> {format_ok}\n"
-        f"<b>YouTube Cookies:</b> {cookie_info['youtube_count']}\n"
+        f"<b>YouTube Cookies Count:</b> {cookie_info['youtube_count']}\n"
         f"<b>Auth Cookies:</b> {cookie_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}\n"
         f"<b>Status:</b> {cookie_info['status']}\n"
     )
 
     if cookie_info["status"] != "VALID":
         msg += f"\n<b>Missing Auth Cookies:</b> <code>{', '.join(cookie_info['missing_auth_cookies'])}</code>\n"
-        msg += "\n⚠️ <b>Notice:</b> YouTube authentication cookies missing or invalid. Please update <code>cookies.txt</code> with full account session cookies."
+        msg += "\n⚠️ <b>Notice:</b> YouTube authentication cookies missing or invalid. YouTube cookies detected but authenticated session is unavailable."
 
     return msg
