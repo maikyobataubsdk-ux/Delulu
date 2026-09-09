@@ -4,6 +4,7 @@ from SONALI_MUSIC import app
 from SONALI_MUSIC.misc import SUDOERS
 from SONALI_MUSIC.utils.database import add_off, add_on
 from SONALI_MUSIC.utils.decorators.language import language
+from SONALI_MUSIC.utils.youtube_utils import get_health_status, get_cookiecheck_status
 
 
 @app.on_message(filters.command(["logger"]) & SUDOERS)
@@ -25,6 +26,22 @@ async def logger(client, message, _):
 
 @app.on_message(filters.command(["cookies"]) & SUDOERS)
 @language
-async def logger(client, message, _):
-    await message.reply_document("cookies/logs.csv")
-    await message.reply_text("Please check given file to cookies file choosing logs...")
+async def logger_cookies(client, message, _):
+    try:
+        await message.reply_document("cookies/logs.csv")
+    except Exception:
+        pass
+    status_text = get_cookiecheck_status()
+    await message.reply_text(status_text)
+
+
+@app.on_message(filters.command(["ythealth", "health"]) & SUDOERS)
+async def ythealth_cmd(client, message):
+    health_text = get_health_status()
+    await message.reply_text(health_text)
+
+
+@app.on_message(filters.command(["cookiecheck"]) & SUDOERS)
+async def cookiecheck_cmd(client, message):
+    cookie_text = get_cookiecheck_status()
+    await message.reply_text(cookie_text)

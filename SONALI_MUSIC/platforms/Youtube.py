@@ -8,6 +8,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 import aiohttp
 from SONALI_MUSIC import LOGGER
+from SONALI_MUSIC.utils.youtube_utils import get_cookie_file, analyze_cookies, classify_ytdl_error
 
 try:
     from py_yt import VideosSearch, Playlist
@@ -21,17 +22,10 @@ except ImportError:
 API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
 API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ")
 
-DOWNLOAD_DIR = "downloads"
+DOWNLOAD_DIR = os.path.abspath("downloads")
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
-
-
-def get_cookie_file() -> Optional[str]:
-    for path in ["cookies/cookies.txt", "SONALI_MUSIC/assets/cookies.txt", "assets/cookies.txt"]:
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            return path
-    return None
 
 
 def extract_video_id(link: str) -> str:
@@ -95,7 +89,9 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
 
 def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
     opts = {
+        "format": "bestaudio/best",
         "quiet": True,
+        "noplaylist": True,
         "no_warnings": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
@@ -109,7 +105,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
     if cookie_file:
-        opts["cookiefile"] = cookie_file
+        opts["cookiefile"] = os.path.abspath(cookie_file)
     return opts
 
 
@@ -154,40 +150,16 @@ async def download_song(link: str) -> Optional[str]:
                 pass
 
     yt_link = f"https://www.youtube.com/watch?v={video_id}"
-    cookie_file = get_cookie_file()
+    cookie_analysis = analyze_cookies()
+    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
     loop = asyncio.get_event_loop()
 
-    # Attempt 2: yt-dlp bestaudio with FFmpeg conversion (with cookies if available)
-    try:
-        LOGGER(__name__).info(f"Attempting yt-dlp bestaudio MP3 for {video_id}")
-        ydl_opts = get_ytdl_base_opts(cookie_file)
-        ydl_opts.update({
-            "format": "bestaudio/best",
-            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-        })
-        await loop.run_in_executor(
-            None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
-        )
-        downloaded = find_downloaded_file(video_id, is_video=False)
-        if downloaded:
-            return downloaded
-    except Exception as e:
-        LOGGER(__name__).error(f"yt-dlp bestaudio MP3 failed for {video_id}: {e}")
-
-    # Attempt 3: yt-dlp without cookies
+    # Attempt 2: yt-dlp bestaudio with FFmpeg conversion (with cookies if valid)
     if cookie_file:
         try:
-            LOGGER(__name__).info(f"Attempting yt-dlp bestaudio MP3 without cookies for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
-            ydl_opts_nocookie.update({
-                "format": "bestaudio/best",
+            LOGGER(__name__).info(f"Attempting yt-dlp bestaudio MP3 with cookies for {video_id}")
+            ydl_opts = get_ytdl_base_opts(cookie_file)
+            ydl_opts.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
                 "postprocessors": [
                     {
@@ -198,20 +170,46 @@ async def download_song(link: str) -> Optional[str]:
                 ],
             })
             await loop.run_in_executor(
-                None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
+                None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
             downloaded = find_downloaded_file(video_id, is_video=False)
             if downloaded:
                 return downloaded
         except Exception as e:
-            LOGGER(__name__).error(f"yt-dlp bestaudio MP3 (no cookies) failed for {video_id}: {e}")
+            err_type, err_msg = classify_ytdl_error(e)
+            if err_type == "AUTH_REQUIRED":
+                LOGGER(__name__).error(f"yt-dlp cookie authentication failed for {video_id}: {err_msg}")
+            else:
+                LOGGER(__name__).error(f"yt-dlp bestaudio MP3 failed for {video_id}: {e}")
+
+    # Attempt 3: yt-dlp without cookies
+    try:
+        LOGGER(__name__).info(f"Attempting yt-dlp bestaudio MP3 without cookies for {video_id}")
+        ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
+        ydl_opts_nocookie.update({
+            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
+        })
+        await loop.run_in_executor(
+            None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
+        )
+        downloaded = find_downloaded_file(video_id, is_video=False)
+        if downloaded:
+            return downloaded
+    except Exception as e:
+        LOGGER(__name__).error(f"yt-dlp bestaudio MP3 (no cookies) failed for {video_id}: {e}")
 
     # Attempt 4: yt-dlp raw bestaudio/best without postprocessing
     try:
         LOGGER(__name__).info(f"Attempting yt-dlp raw audio for {video_id}")
-        ydl_opts_raw = get_ytdl_base_opts(cookie_file)
+        ydl_opts_raw = get_ytdl_base_opts(cookie_file=None)
         ydl_opts_raw.update({
-            "format": "bestaudio/best",
             "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
         })
         await loop.run_in_executor(
@@ -226,7 +224,7 @@ async def download_song(link: str) -> Optional[str]:
     # Attempt 5: Progressive format fallback
     try:
         LOGGER(__name__).info(f"Attempting yt-dlp progressive fallback for {video_id}")
-        ydl_opts_prog = get_ytdl_base_opts(cookie_file)
+        ydl_opts_prog = get_ytdl_base_opts(cookie_file=None)
         ydl_opts_prog.update({
             "format": "best[ext=mp4]/best",
             "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -285,43 +283,48 @@ async def download_video(link: str) -> Optional[str]:
                 pass
 
     yt_link = f"https://www.youtube.com/watch?v={video_id}"
-    cookie_file = get_cookie_file()
+    cookie_analysis = analyze_cookies()
+    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
     loop = asyncio.get_event_loop()
 
-    # Attempt 2: yt-dlp video format selection (with cookies)
-    try:
-        LOGGER(__name__).info(f"Attempting yt-dlp video download for {video_id}")
-        ydl_opts = get_ytdl_base_opts(cookie_file)
-        ydl_opts.update({
-            "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-        })
-        await loop.run_in_executor(
-            None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
-        )
-        downloaded = find_downloaded_file(video_id, is_video=True)
-        if downloaded:
-            return downloaded
-    except Exception as e:
-        LOGGER(__name__).error(f"yt-dlp video download failed for {video_id}: {e}")
-
-    # Attempt 3: yt-dlp video format selection (no cookies)
+    # Attempt 2: yt-dlp video format selection (with cookies if valid)
     if cookie_file:
         try:
-            LOGGER(__name__).info(f"Attempting yt-dlp video download without cookies for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
-            ydl_opts_nocookie.update({
+            LOGGER(__name__).info(f"Attempting yt-dlp video download with cookies for {video_id}")
+            ydl_opts = get_ytdl_base_opts(cookie_file)
+            ydl_opts.update({
                 "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             })
             await loop.run_in_executor(
-                None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
+                None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
             )
             downloaded = find_downloaded_file(video_id, is_video=True)
             if downloaded:
                 return downloaded
         except Exception as e:
-            LOGGER(__name__).error(f"yt-dlp video download (no cookies) failed for {video_id}: {e}")
+            err_type, err_msg = classify_ytdl_error(e)
+            if err_type == "AUTH_REQUIRED":
+                LOGGER(__name__).error(f"yt-dlp video cookie authentication failed for {video_id}: {err_msg}")
+            else:
+                LOGGER(__name__).error(f"yt-dlp video download failed for {video_id}: {e}")
+
+    # Attempt 3: yt-dlp video format selection (no cookies)
+    try:
+        LOGGER(__name__).info(f"Attempting yt-dlp video download without cookies for {video_id}")
+        ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
+        ydl_opts_nocookie.update({
+            "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+        })
+        await loop.run_in_executor(
+            None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
+        )
+        downloaded = find_downloaded_file(video_id, is_video=True)
+        if downloaded:
+            return downloaded
+    except Exception as e:
+        LOGGER(__name__).error(f"yt-dlp video download (no cookies) failed for {video_id}: {e}")
 
     LOGGER(__name__).critical(f"All video download fallbacks failed for video_id: {video_id}")
     return None
@@ -352,7 +355,8 @@ class YouTubeAPI:
 
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
         loop = asyncio.get_event_loop()
-        cookie_file = get_cookie_file()
+        cookie_analysis = analyze_cookies()
+        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
         ydl_opts = get_ytdl_base_opts(cookie_file)
         target = query_or_url if ("youtube.com" in query_or_url or "youtu.be" in query_or_url) else f"ytsearch1:{query_or_url}"
 
@@ -383,7 +387,11 @@ class YouTubeAPI:
                     }
                     return track_details, v_id
         except Exception as e:
-            LOGGER(__name__).error(f"yt-dlp extract_info fallback error for {query_or_url}: {e}")
+            err_type, err_msg = classify_ytdl_error(e)
+            if err_type == "AUTH_REQUIRED":
+                LOGGER(__name__).error(f"yt-dlp extract_info authentication required: {err_msg}")
+            else:
+                LOGGER(__name__).error(f"yt-dlp extract_info fallback error for {query_or_url}: {e}")
         return None
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
@@ -544,7 +552,8 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
 
-        cookie_file = get_cookie_file()
+        cookie_analysis = analyze_cookies()
+        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
         ytdl_opts = get_ytdl_base_opts(cookie_file)
         formats_available = []
         try:
