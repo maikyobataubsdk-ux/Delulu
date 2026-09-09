@@ -1,11 +1,12 @@
 import os
+import traceback
 from random import randint
 from typing import Union
 
 from pyrogram.types import InlineKeyboardMarkup
 
 import config
-from SONALI_MUSIC import Carbon, YouTube, app
+from SONALI_MUSIC import Carbon, YouTube, app, LOGGER
 from SONALI_MUSIC.core.call import Sona
 from SONALI_MUSIC.misc import db
 from SONALI_MUSIC.utils.database import add_active_video_chat, is_active_chat
@@ -47,7 +48,8 @@ async def stream(
                     thumbnail,
                     vidid,
                 ) = await YouTube.details(search, False if spotify else True)
-            except:
+            except Exception as e:
+                LOGGER(__name__).error(f"Error fetching details for playlist item {search}: {e}")
                 continue
             if str(duration_min) == "None":
                 continue
@@ -73,14 +75,27 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 status = True if video else None
+                file_path, direct = None, False
                 try:
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=status, videoid=True
                     )
-                except:
-                    raise AssistantErr(_["play_14"])
+                except Exception as e:
+                    LOGGER(__name__).error(f"Playlist track download failed for {vidid}: {e}\n{traceback.format_exc()}")
+
+                if not file_path and status:
+                    LOGGER(__name__).info(f"Retrying playlist track {vidid} in audio-only mode")
+                    try:
+                        file_path, direct = await YouTube.download(
+                            vidid, mystic, video=None, videoid=True
+                        )
+                        status = None
+                    except Exception as e:
+                        LOGGER(__name__).error(f"Playlist track audio fallback download failed for {vidid}: {e}")
+
                 if not file_path:
-                    raise AssistantErr(_["play_14"])
+                    continue
+
                 await Sona.join_call(
                     chat_id,
                     original_chat_id,
@@ -116,8 +131,9 @@ async def stream(
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
+                count += 1
         if count == 0:
-            return
+            raise AssistantErr(_["play_14"])
         else:
             link = await SonaBin(msg)
             lines = msg.count("\n")
@@ -130,7 +146,7 @@ async def stream(
             return await app.send_photo(
                 original_chat_id,
                 photo=carbon,
-                caption=_["play_21"].format(position, link),
+                caption=_["play_21"].format(count, link),
                 reply_markup=upl,
             )
     elif streamtype == "youtube":
@@ -140,14 +156,28 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
         status = True if video else None
+
+        file_path, direct = None, False
         try:
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
-        except:
-            raise AssistantErr(_["play_14"])
+        except Exception as e:
+            LOGGER(__name__).error(f"YouTube download error for {vidid}: {e}\n{traceback.format_exc()}")
+
+        if not file_path and status:
+            LOGGER(__name__).info(f"Video download failed for {vidid}, attempting audio-only fallback...")
+            try:
+                file_path, direct = await YouTube.download(
+                    vidid, mystic, videoid=True, video=None
+                )
+                status = None
+            except Exception as e:
+                LOGGER(__name__).error(f"YouTube audio fallback download error for {vidid}: {e}\n{traceback.format_exc()}")
+
         if not file_path:
             raise AssistantErr(_["play_14"])
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
