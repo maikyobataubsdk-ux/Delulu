@@ -26,7 +26,7 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
-from SONALI_MUSIC.utils.youtube_utils import analyze_cookies, classify_ytdl_error
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error
 
 # Command
 SONG_COMMAND = ["song"]
@@ -243,37 +243,12 @@ async def song_download_cb(client, CallbackQuery, _):
     mystic = await CallbackQuery.edit_message_text(_["song_8"])
     yturl = f"https://www.youtube.com/watch?v={vidid}"
 
-    cookie_analysis = analyze_cookies()
-    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
-
-    song_opts = {
-        "format": "bestaudio/best",
-        "quiet": True,
-        "noplaylist": True,
-        "no_warnings": True,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "socket_timeout": 20,
-        "retries": 5,
-        "fragment_retries": 5,
-        "extractor_retries": 3,
-        "ignoreerrors": True,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
-    }
-    if cookie_file:
-        song_opts["cookiefile"] = os.path.abspath(cookie_file)
+    valid_cookie_files = get_valid_cookie_files()
+    cookie_candidates = valid_cookie_files + [None]
 
     x = None
-    try:
-        with yt_dlp.YoutubeDL(song_opts) as ytdl:
-            x = ytdl.extract_info(yturl, download=False)
-    except Exception as e:
-        err_type, err_msg = classify_ytdl_error(e)
-        if err_type == "AUTH_REQUIRED":
-            return await mystic.edit_text("⚠️ YouTube authentication is currently unavailable. Trying another playback method...")
-        song_opts_nocookie = {
+    for cookie_file in cookie_candidates:
+        song_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "noplaylist": True,
@@ -289,11 +264,15 @@ async def song_download_cb(client, CallbackQuery, _):
             "remote_components": ["ejs:github"],
             "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
+        if cookie_file:
+            song_opts["cookiefile"] = os.path.abspath(cookie_file)
         try:
-            with yt_dlp.YoutubeDL(song_opts_nocookie) as ytdl:
+            with yt_dlp.YoutubeDL(song_opts) as ytdl:
                 x = ytdl.extract_info(yturl, download=False)
-        except Exception:
-            return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
+            if x:
+                break
+        except Exception as e:
+            err_type, err_msg = classify_ytdl_error(e)
 
     if not x:
         return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")

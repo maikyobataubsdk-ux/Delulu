@@ -2,7 +2,7 @@ import os
 from os import path
 import yt_dlp
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.utils.youtube_utils import get_cookie_file, analyze_cookies, classify_ytdl_error
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error
 
 
 def get_downloader_opts(cookie_file=None):
@@ -43,25 +43,22 @@ def find_downloaded_file_by_id(vid_id: str) -> str:
 def download(url: str, my_hook=None) -> str:
     os.makedirs("downloads", exist_ok=True)
 
-    cookie_analysis = analyze_cookies()
-    cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
-    ytdl_opts = get_downloader_opts(cookie_file)
+    valid_cookie_files = get_valid_cookie_files()
+    cookie_candidates = valid_cookie_files + [None]
 
     info = None
-    try:
-        ydl = yt_dlp.YoutubeDL(ytdl_opts)
-        info = ydl.extract_info(url, False)
-    except Exception as e:
-        err_type, err_msg = classify_ytdl_error(e)
-        LOGGER(__name__).warning(f"[YT-DOWNLOAD] Downloader extract_info failed ({err_type}): {err_msg}")
-        if cookie_file:
-            try:
-                LOGGER(__name__).info("[YT-DOWNLOAD] Retrying extract_info without cookies...")
-                opts_nocookie = get_downloader_opts(cookie_file=None)
-                info = yt_dlp.YoutubeDL(opts_nocookie).extract_info(url, False)
-            except Exception as ex:
-                LOGGER(__name__).error(f"[YT-DOWNLOAD] Downloader extract_info without cookies error: {ex}")
-                info = None
+    for idx, cookie_file in enumerate(cookie_candidates, 1):
+        ytdl_opts = get_downloader_opts(cookie_file)
+        c_name = os.path.basename(cookie_file) if cookie_file else "no-cookies"
+        try:
+            ydl = yt_dlp.YoutubeDL(ytdl_opts)
+            info = ydl.extract_info(url, False)
+            if info:
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] Downloader extract_info successful with candidate #{idx} ({c_name})")
+                break
+        except Exception as e:
+            err_type, err_msg = classify_ytdl_error(e)
+            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Downloader extract_info failed ({err_type}) with candidate #{idx} ({c_name}): {err_msg}")
 
     vid_id = info.get("id") if info else None
     if vid_id:
@@ -69,28 +66,25 @@ def download(url: str, my_hook=None) -> str:
         if existing:
             return existing
 
-    try:
-        x_opts = dict(ytdl_opts)
-        x = yt_dlp.YoutubeDL(x_opts)
-        if my_hook:
-            x.add_progress_hook(my_hook)
-        x.download([url])
-    except Exception as y_e:
-        LOGGER(__name__).error(f"[YT-DOWNLOAD] Downloader download error: {y_e}")
-        if vid_id:
-            found = find_downloaded_file_by_id(vid_id)
-            if found:
-                return found
-        if cookie_file:
-            try:
-                LOGGER(__name__).info("[YT-DOWNLOAD] Retrying downloader without cookies...")
-                nocookie_opts = get_downloader_opts(cookie_file=None)
-                x_nc = yt_dlp.YoutubeDL(nocookie_opts)
-                if my_hook:
-                    x_nc.add_progress_hook(my_hook)
-                x_nc.download([url])
-            except Exception as nc_e:
-                LOGGER(__name__).error(f"[YT-DOWNLOAD] Downloader download without cookies error: {nc_e}")
+    for idx, cookie_file in enumerate(cookie_candidates, 1):
+        c_name = os.path.basename(cookie_file) if cookie_file else "no-cookies"
+        try:
+            x_opts = get_downloader_opts(cookie_file)
+            x = yt_dlp.YoutubeDL(x_opts)
+            if my_hook:
+                x.add_progress_hook(my_hook)
+            x.download([url])
+            if vid_id:
+                found = find_downloaded_file_by_id(vid_id)
+                if found:
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Downloader download successful with candidate #{idx} ({c_name})")
+                    return found
+        except Exception as y_e:
+            LOGGER(__name__).error(f"[YT-DOWNLOAD] Downloader download error with candidate #{idx} ({c_name}): {y_e}")
+            if vid_id:
+                found = find_downloaded_file_by_id(vid_id)
+                if found:
+                    return found
 
     if vid_id:
         found = find_downloaded_file_by_id(vid_id)

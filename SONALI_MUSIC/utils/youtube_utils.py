@@ -10,18 +10,45 @@ REQUIRED_AUTH_COOKIES = {"SID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3
 VISITOR_COOKIE_NAMES = {"PREF", "SOCS", "YSC", "VISITOR_INFO1_LIVE", "VISITOR_PRIVACY_METADATA", "__Secure-ROLLOUT_TOKEN", "GPS"}
 
 
-def get_cookie_file() -> Optional[str]:
+def get_cookie_files() -> List[str]:
+    """Returns all available and non-empty cookie file paths in order of preference."""
+    candidates = []
+
+    # 1. Environment variable if set
     env_cookie = os.environ.get("YOUTUBE_COOKIES")
     if env_cookie:
-        abs_env = os.path.abspath(env_cookie)
-        if os.path.exists(abs_env) and os.path.getsize(abs_env) > 0:
-            return abs_env
+        candidates.append(env_cookie)
 
-    for path in ["cookies/cookies.txt", "SONALI_MUSIC/assets/cookies.txt", "assets/cookies.txt"]:
-        abs_path = os.path.abspath(path)
-        if os.path.exists(abs_path) and os.path.getsize(abs_path) > 0:
-            return abs_path
-    return None
+    # 2. Known project paths for primary and secondary cookies
+    project_paths = [
+        "cookies/cookies.txt",
+        "cookies/cookie1.txt",
+        "cookies/cookie2.txt",
+        "SONALI_MUSIC/assets/cookies.txt",
+        "SONALI_MUSIC/assets/cookie2.txt",
+        "assets/cookies.txt",
+        "assets/cookie2.txt",
+    ]
+    candidates.extend(project_paths)
+
+    existing_files = []
+    seen = set()
+    for path in candidates:
+        abs_p = os.path.abspath(path)
+        if abs_p not in seen and os.path.exists(abs_p) and os.path.getsize(abs_p) > 0:
+            existing_files.append(abs_p)
+            seen.add(abs_p)
+
+    return existing_files
+
+
+def get_cookie_file() -> Optional[str]:
+    """Returns the primary valid cookie file if available, otherwise any first valid cookie file."""
+    valid_files = get_valid_cookie_files()
+    if valid_files:
+        return valid_files[0]
+    all_files = get_cookie_files()
+    return all_files[0] if all_files else None
 
 
 def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
@@ -108,10 +135,26 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
             result["status"] = "INVALID"
 
     except Exception as e:
-        LOGGER(__name__).error(f"Error analyzing cookie file: {e}")
+        LOGGER(__name__).error(f"Error analyzing cookie file {cookie_path}: {e}")
         result["status"] = "INVALID"
 
     return result
+
+
+def get_valid_cookie_files() -> List[str]:
+    """Returns all cookie files that have 'VALID' status (or 'INCOMPLETE' as secondary fallback)."""
+    valid_files = []
+    incomplete_files = []
+
+    for c_path in get_cookie_files():
+        analysis = analyze_cookies(c_path)
+        if analysis["status"] == "VALID":
+            valid_files.append(c_path)
+        elif analysis["status"] == "INCOMPLETE":
+            incomplete_files.append(c_path)
+
+    # Prioritize VALID cookies first, then INCOMPLETE if no VALID ones exist
+    return valid_files if valid_files else incomplete_files
 
 
 def check_bgutil_and_potoken() -> Dict[str, Any]:
@@ -198,27 +241,19 @@ def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, s
 def log_startup_diagnostics() -> Dict[str, Any]:
     yt_ver = get_yt_dlp_version()
     ff_ver = get_ffmpeg_version()
-    cookie_info = analyze_cookies()
+    cookie_files = get_cookie_files()
+    valid_cookies = get_valid_cookie_files()
     pot_info = check_bgutil_and_potoken()
 
     LOGGER(__name__).info("======== YouTube Extraction System Diagnostics ========")
     LOGGER(__name__).info(f"[YT-DIAG] yt-dlp Version          : {yt_ver}")
     LOGGER(__name__).info(f"[YT-DIAG] FFmpeg Status           : {ff_ver}")
-    LOGGER(__name__).info(f"[YT-AUTH] Cookie file             : {cookie_info['cookie_path'] or 'None'}")
-    LOGGER(__name__).info(f"[YT-AUTH] Cookie file Exists      : {cookie_info['exists']}")
-    LOGGER(__name__).info(f"[YT-AUTH] Cookie count            : {cookie_info['youtube_count']}")
-    LOGGER(__name__).info(f"[YT-AUTH] Auth cookies count      : {cookie_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}")
+    LOGGER(__name__).info(f"[YT-AUTH] Found Cookie Files      : {len(cookie_files)}")
+    LOGGER(__name__).info(f"[YT-AUTH] Valid Cookie Files      : {len(valid_cookies)}")
 
-    if cookie_info["status"] == "VALID":
-        LOGGER(__name__).info("[YT-AUTH] Auth cookies            : VALID")
-        LOGGER(__name__).info("[YT-AUTH] Status                  : VALID")
-    elif cookie_info["youtube_count"] > 0:
-        LOGGER(__name__).warning("[YT-AUTH] Auth cookies            : MISSING / INCOMPLETE")
-        LOGGER(__name__).warning("[YT-AUTH] Status                  : INCOMPLETE")
-        LOGGER(__name__).warning("[YT-AUTH] YouTube cookies detected but authenticated session is unavailable.")
-    else:
-        LOGGER(__name__).warning("[YT-AUTH] Auth cookies            : MISSING")
-        LOGGER(__name__).warning("[YT-AUTH] Status                  : MISSING")
+    for idx, c_path in enumerate(cookie_files, 1):
+        c_info = analyze_cookies(c_path)
+        LOGGER(__name__).info(f"[YT-AUTH] Cookie #{idx} ({os.path.basename(c_path)}) : {c_info['status']} ({c_info['auth_count']}/{len(REQUIRED_AUTH_COOKIES)} auth cookies)")
 
     LOGGER(__name__).info(f"[YT-PO] PO Token Provider Status : {pot_info['potoken_provider_status']}")
     LOGGER(__name__).info("=======================================================")
@@ -226,7 +261,8 @@ def log_startup_diagnostics() -> Dict[str, Any]:
     return {
         "yt_version": yt_ver,
         "ffmpeg_version": ff_ver,
-        "cookie_info": cookie_info,
+        "cookie_files": cookie_files,
+        "valid_cookies": valid_cookies,
         "pot_info": pot_info,
     }
 
@@ -234,13 +270,13 @@ def log_startup_diagnostics() -> Dict[str, Any]:
 def get_health_status() -> str:
     yt_ver = get_yt_dlp_version()
     ff_ver = get_ffmpeg_version()
-    cookie_info = analyze_cookies()
+    cookie_files = get_cookie_files()
+    valid_cookies = get_valid_cookie_files()
     pot_info = check_bgutil_and_potoken()
 
     yt_status = "OK" if yt_ver != "Unknown" else "ERROR"
     ff_status = "OK" if "NOT INSTALLED" not in ff_ver else "MISSING"
-    cookie_status = cookie_info["status"]
-    auth_status = "OK" if cookie_info["auth_count"] == len(REQUIRED_AUTH_COOKIES) else "Missing"
+    cookie_status = "VALID" if len(valid_cookies) > 0 else ("INCOMPLETE" if len(cookie_files) > 0 else "MISSING")
     pot_status = "OK" if "OK" in pot_info["potoken_provider_status"] else "WARNING"
     bgutil_status = "OK" if pot_info["bgutil_dir_exists"] or pot_info["bgutil_server_running"] else "NOT INSTALLED"
 
@@ -248,8 +284,8 @@ def get_health_status() -> str:
         "<b>📊 YouTube System Health Check</b>\n\n"
         f"<b>YT-DLP:</b> {yt_status} ({yt_ver})\n"
         f"<b>FFMPEG:</b> {ff_status}\n"
-        f"<b>Cookies:</b> {cookie_status}\n"
-        f"<b>Auth Cookies:</b> {auth_status}\n"
+        f"<b>Cookie Files:</b> {len(cookie_files)} total ({len(valid_cookies)} valid)\n"
+        f"<b>Cookies Status:</b> {cookie_status}\n"
         f"<b>PO Token:</b> {pot_status}\n"
         f"<b>BGUTIL:</b> {bgutil_status}\n"
     )
@@ -257,23 +293,23 @@ def get_health_status() -> str:
 
 
 def get_cookiecheck_status() -> str:
-    cookie_info = analyze_cookies()
+    cookie_files = get_cookie_files()
+    if not cookie_files:
+        return "<b>🍪 Cookie Validation Status</b>\n\n⚠️ No cookie files found in repository."
 
-    file_ok = "OK" if cookie_info["exists"] else "MISSING"
-    format_ok = "OK" if cookie_info["valid_format"] else "INVALID"
+    msg = "<b>🍪 Cookie Validation Status</b>\n\n"
+    for idx, c_path in enumerate(cookie_files, 1):
+        c_info = analyze_cookies(c_path)
+        file_ok = "OK" if c_info["exists"] else "MISSING"
+        format_ok = "OK" if c_info["valid_format"] else "INVALID"
 
-    msg = (
-        "<b>🍪 Cookie Validation Status</b>\n\n"
-        f"<b>Cookie Path:</b> <code>{cookie_info['cookie_path'] or 'None'}</code>\n"
-        f"<b>Cookie File:</b> {file_ok}\n"
-        f"<b>Format:</b> {format_ok}\n"
-        f"<b>YouTube Cookies Count:</b> {cookie_info['youtube_count']}\n"
-        f"<b>Auth Cookies:</b> {cookie_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}\n"
-        f"<b>Status:</b> {cookie_info['status']}\n"
-    )
+        msg += (
+            f"<b>Cookie #{idx}:</b> <code>{os.path.basename(c_path)}</code>\n"
+            f"<b>File:</b> {file_ok} | <b>Format:</b> {format_ok}\n"
+            f"<b>Auth Cookies:</b> {c_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}\n"
+            f"<b>Status:</b> {c_info['status']}\n\n"
+        )
 
-    if cookie_info["status"] != "VALID":
-        msg += f"\n<b>Missing Auth Cookies:</b> <code>{', '.join(cookie_info['missing_auth_cookies'])}</code>\n"
-        msg += "\n⚠️ <b>Notice:</b> YouTube authentication cookies missing or invalid. YouTube cookies detected but authenticated session is unavailable."
-
+    valid_count = len(get_valid_cookie_files())
+    msg += f"<b>Multi-Cookie Backup Mode:</b> {'Active (' + str(valid_count) + ' ready)' if valid_count > 0 else 'Disabled'}\n"
     return msg
