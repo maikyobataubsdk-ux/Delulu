@@ -8,7 +8,13 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 import aiohttp
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.utils.youtube_utils import get_cookie_file, analyze_cookies, classify_ytdl_error
+from SONALI_MUSIC.utils.youtube_utils import (
+    get_cookie_file,
+    get_cookie_files,
+    get_valid_cookie_files,
+    analyze_cookies,
+    classify_ytdl_error,
+)
 
 try:
     from py_yt import VideosSearch, Playlist
@@ -110,7 +116,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
 
 
 class YouTubeExtractor:
-    """Centralized YouTube Extraction & Fallback Service."""
+    """Centralized YouTube Extraction & Fallback Service with Multi-Cookie Rotation."""
 
     @staticmethod
     async def download_song(link: str) -> Optional[str]:
@@ -155,35 +161,35 @@ class YouTubeExtractor:
                     pass
 
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
-        cookie_analysis = analyze_cookies()
-        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
+        valid_cookie_files = get_valid_cookie_files()
         loop = asyncio.get_event_loop()
 
-        # Attempt B: Authenticated cookie extraction (only if valid cookies)
-        if cookie_file:
-            try:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B: yt-dlp with authenticated cookies for {video_id}")
-                ydl_opts = get_ytdl_base_opts(cookie_file)
-                ydl_opts.update({
-                    "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                    "postprocessors": [
-                        {
-                            "key": "FFmpegExtractAudio",
-                            "preferredcodec": "mp3",
-                            "preferredquality": "192",
-                        }
-                    ],
-                })
-                await loop.run_in_executor(
-                    None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
-                )
-                downloaded = find_downloaded_file(video_id, is_video=False)
-                if downloaded:
-                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B successful for {video_id}")
-                    return downloaded
-            except Exception as e:
-                err_type, err_msg = classify_ytdl_error(e)
-                LOGGER(__name__).warning(f"[YT-AUTH] Attempt B failed ({err_type}) for {video_id}: {err_msg}")
+        # Attempt B (Multi-Cookie Loop): Try each available valid cookie dataset sequentially
+        if valid_cookie_files:
+            for idx, cookie_file in enumerate(valid_cookie_files, 1):
+                try:
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp download for {video_id}")
+                    ydl_opts = get_ytdl_base_opts(cookie_file)
+                    ydl_opts.update({
+                        "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                        "postprocessors": [
+                            {
+                                "key": "FFmpegExtractAudio",
+                                "preferredcodec": "mp3",
+                                "preferredquality": "192",
+                            }
+                        ],
+                    })
+                    await loop.run_in_executor(
+                        None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
+                    )
+                    downloaded = find_downloaded_file(video_id, is_video=False)
+                    if downloaded:
+                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx}) successful for {video_id}")
+                        return downloaded
+                except Exception as e:
+                    err_type, err_msg = classify_ytdl_error(e)
+                    LOGGER(__name__).warning(f"[YT-AUTH] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}) failed ({err_type}) for {video_id}: {err_msg}")
 
         # Attempt C & D: yt-dlp without cookies (with multi-client fallback)
         try:
@@ -272,28 +278,28 @@ class YouTubeExtractor:
                     pass
 
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
-        cookie_analysis = analyze_cookies()
-        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
+        valid_cookie_files = get_valid_cookie_files()
         loop = asyncio.get_event_loop()
 
-        # Attempt B: yt-dlp video with cookies
-        if cookie_file:
-            try:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B: yt-dlp video with cookies for {video_id}")
-                ydl_opts = get_ytdl_base_opts(cookie_file)
-                ydl_opts.update({
-                    "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                    "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                })
-                await loop.run_in_executor(
-                    None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
-                )
-                downloaded = find_downloaded_file(video_id, is_video=True)
-                if downloaded:
-                    return downloaded
-            except Exception as e:
-                err_type, err_msg = classify_ytdl_error(e)
-                LOGGER(__name__).warning(f"[YT-AUTH] Video cookie download failed ({err_type}) for {video_id}: {err_msg}")
+        # Attempt B (Multi-Cookie Loop): Try each available valid cookie dataset sequentially
+        if valid_cookie_files:
+            for idx, cookie_file in enumerate(valid_cookie_files, 1):
+                try:
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp video for {video_id}")
+                    ydl_opts = get_ytdl_base_opts(cookie_file)
+                    ydl_opts.update({
+                        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                        "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                    })
+                    await loop.run_in_executor(
+                        None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
+                    )
+                    downloaded = find_downloaded_file(video_id, is_video=True)
+                    if downloaded:
+                        return downloaded
+                except Exception as e:
+                    err_type, err_msg = classify_ytdl_error(e)
+                    LOGGER(__name__).warning(f"[YT-AUTH] Video cookie #{idx} download failed ({err_type}) for {video_id}: {err_msg}")
 
         # Attempt C: yt-dlp video without cookies
         try:
@@ -349,46 +355,45 @@ class YouTubeAPI:
 
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
         loop = asyncio.get_event_loop()
-        cookie_analysis = analyze_cookies()
-        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
-        ydl_opts = get_ytdl_base_opts(cookie_file)
+        valid_cookie_files = get_valid_cookie_files()
+        cookie_candidates = valid_cookie_files + [None]
         target = query_or_url if ("youtube.com" in query_or_url or "youtu.be" in query_or_url) else f"ytsearch5:{query_or_url}"
 
-        def _extract():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(target, download=False)
+        for idx, cookie_file in enumerate(cookie_candidates, 1):
+            ydl_opts = get_ytdl_base_opts(cookie_file)
+            def _extract():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(target, download=False)
 
-        try:
-            LOGGER(__name__).info(f"[YT-SEARCH] Extracting info for query/url: {query_or_url}")
-            info = await loop.run_in_executor(None, _extract)
-            if info:
-                entries = info.get("entries") if "entries" in info else [info]
-                for entry in (entries or []):
-                    if not entry:
-                        continue
-                    v_id = entry.get("id")
-                    if not v_id:
-                        continue
-                    title = entry.get("title", "Unknown Track")
-                    duration_sec = int(entry.get("duration") or 0)
-                    duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}" if duration_sec else "0:00"
-                    thumbnail = entry.get("thumbnail") or f"https://img.youtube.com/vi/{v_id}/hqdefault.jpg"
-                    yturl = f"https://www.youtube.com/watch?v={v_id}"
-                    track_details = {
-                        "title": title,
-                        "link": yturl,
-                        "vidid": v_id,
-                        "duration_min": duration_min,
-                        "thumb": thumbnail,
-                    }
-                    LOGGER(__name__).info(f"[YT-SEARCH] Successfully resolved track: {title} ({v_id})")
-                    return track_details, v_id
-        except Exception as e:
-            err_type, err_msg = classify_ytdl_error(e)
-            if err_type == "AUTH_REQUIRED":
-                LOGGER(__name__).warning(f"[YT-AUTH] yt-dlp extract_info authentication required: {err_msg}")
-            else:
-                LOGGER(__name__).error(f"[YT-EXTRACT] yt-dlp extract_info error for {query_or_url}: {e}")
+            try:
+                c_desc = os.path.basename(cookie_file) if cookie_file else "no-cookies"
+                LOGGER(__name__).info(f"[YT-SEARCH] Extracting info using candidate #{idx} ({c_desc}) for: {query_or_url}")
+                info = await loop.run_in_executor(None, _extract)
+                if info:
+                    entries = info.get("entries") if "entries" in info else [info]
+                    for entry in (entries or []):
+                        if not entry:
+                            continue
+                        v_id = entry.get("id")
+                        if not v_id:
+                            continue
+                        title = entry.get("title", "Unknown Track")
+                        duration_sec = int(entry.get("duration") or 0)
+                        duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}" if duration_sec else "0:00"
+                        thumbnail = entry.get("thumbnail") or f"https://img.youtube.com/vi/{v_id}/hqdefault.jpg"
+                        yturl = f"https://www.youtube.com/watch?v={v_id}"
+                        track_details = {
+                            "title": title,
+                            "link": yturl,
+                            "vidid": v_id,
+                            "duration_min": duration_min,
+                            "thumb": thumbnail,
+                        }
+                        LOGGER(__name__).info(f"[YT-SEARCH] Successfully resolved track: {title} ({v_id})")
+                        return track_details, v_id
+            except Exception as e:
+                err_type, err_msg = classify_ytdl_error(e)
+                LOGGER(__name__).warning(f"[YT-EXTRACT] Candidate #{idx} error ({err_type}) for {query_or_url}: {err_msg}")
         return None
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
@@ -558,34 +563,38 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
 
-        cookie_analysis = analyze_cookies()
-        cookie_file = cookie_analysis["cookie_path"] if cookie_analysis["status"] == "VALID" else None
-        ytdl_opts = get_ytdl_base_opts(cookie_file)
+        valid_cookie_files = get_valid_cookie_files()
+        cookie_candidates = valid_cookie_files + [None]
         formats_available = []
-        try:
-            loop = asyncio.get_event_loop()
+
+        loop = asyncio.get_event_loop()
+        for idx, cookie_file in enumerate(cookie_candidates, 1):
+            ytdl_opts = get_ytdl_base_opts(cookie_file)
             def _extract_formats():
                 with yt_dlp.YoutubeDL(ytdl_opts) as ydl:
                     return ydl.extract_info(link, download=False)
-            r = await loop.run_in_executor(None, _extract_formats)
-            if r:
-                for format in r.get("formats", []):
-                    try:
-                        if "dash" not in str(format.get("format", "")).lower():
-                            formats_available.append(
-                                {
-                                    "format": format.get("format"),
-                                    "filesize": format.get("filesize"),
-                                    "format_id": format.get("format_id"),
-                                    "ext": format.get("ext"),
-                                    "format_note": format.get("format_note", ""),
-                                    "yturl": link,
-                                }
-                            )
-                    except Exception:
-                        continue
-        except Exception as e:
-            LOGGER(__name__).error(f"[YT-EXTRACT] YouTube.formats error: {e}")
+            try:
+                r = await loop.run_in_executor(None, _extract_formats)
+                if r:
+                    for format in r.get("formats", []):
+                        try:
+                            if "dash" not in str(format.get("format", "")).lower():
+                                formats_available.append(
+                                    {
+                                        "format": format.get("format"),
+                                        "filesize": format.get("filesize"),
+                                        "format_id": format.get("format_id"),
+                                        "ext": format.get("ext"),
+                                        "format_note": format.get("format_note", ""),
+                                        "yturl": link,
+                                    }
+                                )
+                        except Exception:
+                            continue
+                    if formats_available:
+                        return formats_available, link
+            except Exception as e:
+                LOGGER(__name__).error(f"[YT-EXTRACT] YouTube.formats candidate #{idx} error: {e}")
         return formats_available, link
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
