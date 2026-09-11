@@ -2,13 +2,13 @@ import os
 from os import path
 import yt_dlp
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path
 
 
 def get_downloader_opts(cookie_file=None):
     opts = {
         "outtmpl": "downloads/%(id)s.%(ext)s",
-        "format": "bestaudio/best",
+        "format": "bestaudio/bestvideo+bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,
@@ -23,6 +23,9 @@ def get_downloader_opts(cookie_file=None):
         "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
+    ff_path = get_ffmpeg_path()
+    if ff_path:
+        opts["ffmpeg_location"] = ff_path
     if cookie_file:
         opts["cookiefile"] = os.path.abspath(cookie_file)
     return opts
