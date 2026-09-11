@@ -204,12 +204,28 @@ def get_yt_dlp_version() -> str:
         return "Unknown"
 
 
+def get_ffmpeg_path() -> Optional[str]:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    candidates = [
+        "/home/jules/.local/share/ffmpeg_bin/ffmpeg",
+        os.path.expanduser("~/.local/share/ffmpeg_bin/ffmpeg"),
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ]
+    for c in candidates:
+        if os.path.exists(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
 def get_ffmpeg_version() -> str:
-    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_path = get_ffmpeg_path()
     if not ffmpeg_path:
         return "NOT INSTALLED"
     try:
-        res = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
+        res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=5)
         if res.returncode == 0:
             first_line = res.stdout.splitlines()[0]
             return first_line.split("version")[1].strip().split()[0] if "version" in first_line else first_line[:30]

@@ -26,7 +26,7 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path
 
 # Command
 SONG_COMMAND = ["song"]
@@ -249,7 +249,7 @@ async def song_download_cb(client, CallbackQuery, _):
     x = None
     for cookie_file in cookie_candidates:
         song_opts = {
-            "format": "bestaudio/best",
+            "format": "bestaudio/bestvideo+bestaudio/best",
             "quiet": True,
             "noplaylist": True,
             "no_warnings": True,
@@ -264,6 +264,9 @@ async def song_download_cb(client, CallbackQuery, _):
             "remote_components": ["ejs:github"],
             "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
+        ff_path = get_ffmpeg_path()
+        if ff_path:
+            song_opts["ffmpeg_location"] = ff_path
         if cookie_file:
             song_opts["cookiefile"] = os.path.abspath(cookie_file)
         try:

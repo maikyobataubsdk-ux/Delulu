@@ -14,6 +14,7 @@ from SONALI_MUSIC.utils.youtube_utils import (
     get_valid_cookie_files,
     analyze_cookies,
     classify_ytdl_error,
+    get_ffmpeg_path,
 )
 
 try:
@@ -95,7 +96,7 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
 
 def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
     opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio/bestvideo+bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,
@@ -110,6 +111,9 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
         "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
+    ff_path = get_ffmpeg_path()
+    if ff_path:
+        opts["ffmpeg_location"] = ff_path
     if cookie_file:
         opts["cookiefile"] = os.path.abspath(cookie_file)
     return opts
@@ -172,14 +176,15 @@ class YouTubeExtractor:
                     ydl_opts = get_ytdl_base_opts(cookie_file)
                     ydl_opts.update({
                         "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                        "postprocessors": [
+                    })
+                    if get_ffmpeg_path():
+                        ydl_opts["postprocessors"] = [
                             {
                                 "key": "FFmpegExtractAudio",
                                 "preferredcodec": "mp3",
                                 "preferredquality": "192",
                             }
-                        ],
-                    })
+                        ]
                     await loop.run_in_executor(
                         None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
                     )
@@ -190,21 +195,26 @@ class YouTubeExtractor:
                 except Exception as e:
                     err_type, err_msg = classify_ytdl_error(e)
                     LOGGER(__name__).warning(f"[YT-AUTH] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}) failed ({err_type}) for {video_id}: {err_msg}")
+                    downloaded = find_downloaded_file(video_id, is_video=False)
+                    if downloaded:
+                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx}) retrieved downloaded media file despite postprocessing error for {video_id}")
+                        return downloaded
 
-        # Attempt C & D: yt-dlp without cookies (with multi-client fallback)
+        # Attempt C & D: yt-dlp without cookies
         try:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D: yt-dlp bestaudio (no cookies) for {video_id}")
             ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
             ydl_opts_nocookie.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                "postprocessors": [
+            })
+            if get_ffmpeg_path():
+                ydl_opts_nocookie["postprocessors"] = [
                     {
                         "key": "FFmpegExtractAudio",
                         "preferredcodec": "mp3",
                         "preferredquality": "192",
                     }
-                ],
-            })
+                ]
             await loop.run_in_executor(
                 None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
             )
@@ -214,6 +224,10 @@ class YouTubeExtractor:
                 return downloaded
         except Exception as e:
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Attempt C/D failed for {video_id}: {e}")
+            downloaded = find_downloaded_file(video_id, is_video=False)
+            if downloaded:
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D retrieved downloaded file despite postprocessing error for {video_id}")
+                return downloaded
 
         # Attempt E: Raw audio format fallback without postprocessing
         try:
@@ -231,6 +245,9 @@ class YouTubeExtractor:
                 return downloaded
         except Exception as e:
             LOGGER(__name__).error(f"[YT-DOWNLOAD] Attempt E failed for {video_id}: {e}")
+            downloaded = find_downloaded_file(video_id, is_video=False)
+            if downloaded:
+                return downloaded
 
         LOGGER(__name__).critical(f"[YT-DOWNLOAD] All download fallbacks failed for video_id: {video_id}")
         return None
