@@ -8,7 +8,7 @@ from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_yt
 def get_downloader_opts(cookie_file=None):
     opts = {
         "outtmpl": "downloads/%(id)s.%(ext)s",
-        "format": "bestaudio/bestvideo+bestaudio/best",
+        "format": "bestaudio/bestaudio*/bestvideo+bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,
