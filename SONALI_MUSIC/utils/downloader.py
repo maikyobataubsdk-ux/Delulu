@@ -2,7 +2,7 @@ import os
 from os import path
 import yt_dlp
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path, is_bgutil_server_running
 
 
 def get_downloader_opts(cookie_file=None):
@@ -23,6 +23,8 @@ def get_downloader_opts(cookie_file=None):
         "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
+    if not is_bgutil_server_running():
+        opts["no_plugins"] = True
     ff_path = get_ffmpeg_path()
     if ff_path:
         opts["ffmpeg_location"] = ff_path

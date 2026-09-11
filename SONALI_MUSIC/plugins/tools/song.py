@@ -26,7 +26,7 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path, is_bgutil_server_running
 
 # Command
 SONG_COMMAND = ["song"]
@@ -264,6 +264,8 @@ async def song_download_cb(client, CallbackQuery, _):
             "remote_components": ["ejs:github"],
             "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
         }
+        if not is_bgutil_server_running():
+            song_opts["no_plugins"] = True
         ff_path = get_ffmpeg_path()
         if ff_path:
             song_opts["ffmpeg_location"] = ff_path
