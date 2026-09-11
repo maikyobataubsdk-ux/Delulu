@@ -15,6 +15,7 @@ from SONALI_MUSIC.utils.youtube_utils import (
     analyze_cookies,
     classify_ytdl_error,
     get_ffmpeg_path,
+    is_bgutil_server_running,
 )
 
 try:
@@ -111,6 +112,8 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
         "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
     }
+    if not is_bgutil_server_running():
+        opts["no_plugins"] = True
     ff_path = get_ffmpeg_path()
     if ff_path:
         opts["ffmpeg_location"] = ff_path

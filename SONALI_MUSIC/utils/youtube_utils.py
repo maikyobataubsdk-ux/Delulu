@@ -157,6 +157,31 @@ def get_valid_cookie_files() -> List[str]:
     return valid_files if valid_files else incomplete_files
 
 
+import socket
+
+def is_bgutil_server_running() -> bool:
+    # 1. Try connecting to bgutil server HTTP port (default 4416)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", 4416)) == 0:
+                return True
+    except Exception:
+        pass
+
+    # 2. Check for running bgutil server process specifically
+    try:
+        res = subprocess.run(["pgrep", "-f", "bgutil.*server|bgutil-ytdlp"], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            pids = res.stdout.strip().split()
+            current_pid = str(os.getpid())
+            if any(pid != current_pid for pid in pids):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def check_bgutil_and_potoken() -> Dict[str, Any]:
     bgutil_paths = [
         "/root/bgutil-ytdlp-pot-provider",
@@ -171,20 +196,12 @@ def check_bgutil_and_potoken() -> Dict[str, Any]:
     deno_path = shutil.which("deno")
     deno_available = deno_path is not None
 
-    bgutil_server_running = False
-    try:
-        res = subprocess.run(["pgrep", "-f", "bgutil"], capture_output=True, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            bgutil_server_running = True
-    except Exception:
-        pass
+    bgutil_server_running = is_bgutil_server_running()
 
     if bgutil_server_running:
-        potoken_status = "OK"
-    elif bgutil_dir_exists and (node_available or deno_available):
-        potoken_status = "OK (Provider Ready)"
+        potoken_status = "OK (Server Running)"
     elif bgutil_dir_exists:
-        potoken_status = "MISSING_RUNTIME (Node/Deno required)"
+        potoken_status = "DISABLED (Server Not Running)"
     else:
         potoken_status = "NOT_INSTALLED"
 
