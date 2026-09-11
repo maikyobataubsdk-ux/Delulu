@@ -97,7 +97,7 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
 
 def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
     opts = {
-        "format": "bestaudio/bestvideo+bestaudio/best",
+        "format": "bestaudio/bestaudio*/bestvideo+bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,
