@@ -9,10 +9,11 @@ async def auto_clean(popped):
         autoclean.remove(rem)
         count = autoclean.count(rem)
         if count == 0:
-            if "vid_" not in rem or "live_" not in rem or "index_" not in rem:
-                try:
-                    os.remove(rem)
-                except:
-                    pass
+            if not any(prefix in rem for prefix in ("vid_", "live_", "index_")):
+                if os.path.exists(rem):
+                    try:
+                        os.remove(rem)
+                    except Exception:
+                        pass
     except:
         pass
