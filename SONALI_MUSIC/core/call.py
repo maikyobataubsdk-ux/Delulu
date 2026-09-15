@@ -419,19 +419,21 @@ class Call(PyTgCalls):
             n, link = await YouTube.video(videoid, True)
             if n == 0:
                 LOGGER(__name__).error(f"Live video stream fetch failed for {videoid} in chat {chat_id}")
-                return await app.send_message(
+                await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
                 )
+                return await self.change_stream(client, chat_id)
             stream = self._build_stream(link, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
             except Exception as e:
                 LOGGER(__name__).error(f"Failed to play live stream in change_stream for chat {chat_id}: {e}")
-                return await app.send_message(
+                await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
                 )
+                return await self.change_stream(client, chat_id)
             img = await get_thumb(videoid)
             button = stream_markup(_, chat_id)
             run = await app.send_photo(
@@ -475,18 +477,20 @@ class Call(PyTgCalls):
                     LOGGER(__name__).error(f"YouTube audio download error in change_stream for {videoid}: {e}")
 
             if not file_path:
-                return await mystic.edit_text(
+                await mystic.edit_text(
                     _["call_6"], disable_web_page_preview=True
                 )
+                return await self.change_stream(client, chat_id)
             stream = self._build_stream(file_path, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
             except Exception as e:
                 LOGGER(__name__).error(f"Failed to play on assistant in change_stream for chat {chat_id}: {e}")
-                return await app.send_message(
+                await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
                 )
+                return await self.change_stream(client, chat_id)
             img = await get_thumb(videoid)
             button = stream_markup(_, chat_id)
             await mystic.delete()
@@ -511,10 +515,11 @@ class Call(PyTgCalls):
                 await self._play_on_assistant(client, chat_id, stream)
             except Exception as e:
                 LOGGER(__name__).error(f"Failed to play index stream in chat {chat_id}: {e}")
-                return await app.send_message(
+                await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
                 )
+                return await self.change_stream(client, chat_id)
             button = stream_markup(_, chat_id)
             run = await app.send_photo(
                 chat_id=original_chat_id,
@@ -531,10 +536,11 @@ class Call(PyTgCalls):
                 await self._play_on_assistant(client, chat_id, stream)
             except Exception as e:
                 LOGGER(__name__).error(f"Failed to play local stream '{queued}' in chat {chat_id}: {e}")
-                return await app.send_message(
+                await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
                 )
+                return await self.change_stream(client, chat_id)
             if videoid == "telegram":
                 button = stream_markup(_, chat_id)
                 run = await app.send_photo(
