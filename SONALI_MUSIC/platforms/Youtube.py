@@ -10,6 +10,7 @@ import aiohttp
 
 import config
 from SONALI_MUSIC import LOGGER
+from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
 from SONALI_MUSIC.utils.youtube_utils import (
     get_cookie_file,
     get_cookie_files,
@@ -129,6 +130,22 @@ class YouTubeExtractor:
     """Centralized Multi-Provider External API & Local yt-dlp Extraction Pipeline."""
 
     @staticmethod
+    async def _try_jiosaavn_api(video_id: str, is_video: bool) -> Optional[str]:
+        if is_video:
+            return None
+        dest_ext = ".mp3"
+        dest_filename = f"{video_id}{dest_ext}"
+        try:
+            LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio fallback for {video_id}")
+            res_path = await JioSaavn.download_song_by_query(video_id, dest_filename)
+            if res_path and is_valid_media_file(res_path):
+                LOGGER(__name__).info(f"[YT-API] JioSaavn audio download successful for {video_id}")
+                return res_path
+        except Exception as e:
+            LOGGER(__name__).warning(f"[YT-API] JioSaavn API failed for {video_id}: {e}")
+        return None
+
+    @staticmethod
     async def _try_shruti_api(video_id: str, is_video: bool) -> Optional[str]:
         if not SHRUTI_API_URL:
             return None
@@ -205,6 +222,7 @@ class YouTubeExtractor:
             COBALT_API_URL,
             "https://api.cobalt.tools",
             "https://cobalt.stream.fyi",
+            "https://cobalt.qtf.custom",
         ]
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
@@ -247,6 +265,8 @@ class YouTubeExtractor:
         invidious_instances = [
             f"https://inv.riverside.rocks/api/v1/videos/{video_id}",
             f"https://pipedapi.kavin.rocks/streams/{video_id}",
+            f"https://invidious.nerdvpn.de/api/v1/videos/{video_id}",
+            f"https://pipedapi.mha.fi/streams/{video_id}",
         ]
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
@@ -297,8 +317,9 @@ class YouTubeExtractor:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Using cached media file for video_id: {video_id}")
             return existing_file
 
-        # Step 1: External API System (Sequential Provider Fallback Pipeline)
+        # Step 1: External API System (Sequential Multi-Source Fallback Pipeline)
         api_providers = [
+            cls._try_jiosaavn_api,
             cls._try_shruti_api,
             cls._try_pytdbot_api,
             cls._try_cobalt_api,
@@ -413,6 +434,12 @@ class YouTubeExtractor:
                 downloaded = find_downloaded_file(video_id, is_video=False)
                 if downloaded:
                     return downloaded
+
+        # Final Fallback: JioSaavn query retry
+        LOGGER(__name__).info(f"[YT-DOWNLOAD] Triggering final JioSaavn search/download fallback for {video_id}")
+        js_res = await cls._try_jiosaavn_api(video_id, is_video=False)
+        if js_res:
+            return js_res
 
         LOGGER(__name__).critical(f"[YT-DOWNLOAD] All audio download pipelines failed for video_id: {video_id}")
         return None
@@ -529,6 +556,27 @@ class YouTubeAPI:
             LOGGER(__name__).error(f"[YT-EXTRACT] oEmbed fetch error for {vidid}: {e}")
         return "Unknown Title", f"https://img.youtube.com/vi/{vidid}/hqdefault.jpg"
 
+    async def _jiosaavn_extract_track_info(self, query: str) -> Optional[Tuple[Dict[str, Any], str]]:
+        try:
+            info = await JioSaavn.search_song(query)
+            if info:
+                title = info.get("title", query)
+                song_id = info.get("id", "saavn_track")
+                duration_min = info.get("duration_min", "3:30")
+                thumb = info.get("thumb", "https://graph.org/file/4fb9a698630aa5b47be05-060979d72b7752fc8f.jpg")
+                track_details = {
+                    "title": title,
+                    "link": f"https://www.youtube.com/watch?v={song_id}",
+                    "vidid": song_id,
+                    "duration_min": duration_min,
+                    "thumb": thumb,
+                }
+                LOGGER(__name__).info(f"[YT-FALLBACK] JioSaavn track fallback successful: {title} ({song_id})")
+                return track_details, song_id
+        except Exception as e:
+            LOGGER(__name__).warning(f"[YT-FALLBACK] JioSaavn track extraction failed: {e}")
+        return None
+
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
         loop = asyncio.get_event_loop()
         valid_cookie_files = get_valid_cookie_files()
@@ -630,7 +678,14 @@ class YouTubeAPI:
             duration_sec = time_to_seconds(details_dict["duration_min"])
             return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
 
-        # Fallback 2: oEmbed details
+        # Fallback 2: JioSaavn Search API
+        js_res = await self._jiosaavn_extract_track_info(link)
+        if js_res:
+            details_dict, v_id = js_res
+            duration_sec = time_to_seconds(details_dict["duration_min"])
+            return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
+
+        # Fallback 3: oEmbed details
         title, thumbnail = await self._oembed_details(vidid)
         return title, "0:00", 0, thumbnail, vidid
 
@@ -723,7 +778,12 @@ class YouTubeAPI:
         if yt_res:
             return yt_res
 
-        # Fallback 2: oEmbed details
+        # Fallback 2: JioSaavn Search API
+        js_res = await self._jiosaavn_extract_track_info(link)
+        if js_res:
+            return js_res
+
+        # Fallback 3: oEmbed details
         title, thumbnail = await self._oembed_details(vidid)
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         track_details = {
