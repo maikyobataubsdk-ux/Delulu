@@ -7,6 +7,8 @@ import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 import aiohttp
+
+import config
 from SONALI_MUSIC import LOGGER
 from SONALI_MUSIC.utils.youtube_utils import (
     get_cookie_file,
@@ -29,12 +31,17 @@ except ImportError:
         VideosSearch = None
         Playlist = None
 
-API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
-API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ")
+API_URL = getattr(config, "API_URL", "https://pytdbotapi.thequickearn.xyz")
+VIDEO_API_URL = getattr(config, "VIDEO_API_URL", "https://api.video.thequickearn.xyz")
+SHRUTI_API_URL = getattr(config, "SHRUTI_API_URL", "https://api.shrutibots.site")
+SHRUTI_API_KEY = getattr(config, "SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ")
+COBALT_API_URL = getattr(config, "COBALT_API_URL", "https://api.cobalt.tools")
+YTPROXY_URL = getattr(config, "YTPROXY_URL", "https://tgapi.xbitcode.com")
 
 DOWNLOAD_DIR = os.path.abspath("downloads")
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 }
 
 
@@ -97,13 +104,188 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
     return None
 
 
+async def _save_stream_to_file(session: aiohttp.ClientSession, url: str, dest_path: str, headers: Optional[dict] = None) -> bool:
+    try:
+        req_headers = DEFAULT_HEADERS.copy()
+        if headers:
+            req_headers.update(headers)
+        async with session.get(url, headers=req_headers, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+            if resp.status == 200:
+                with open(dest_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(131072):
+                        f.write(chunk)
+                return is_valid_media_file(dest_path)
+    except Exception as e:
+        LOGGER(__name__).debug(f"Failed to save stream from {url}: {e}")
+        if os.path.exists(dest_path):
+            try:
+                os.remove(dest_path)
+            except Exception:
+                pass
+    return False
 
 
 class YouTubeExtractor:
-    """Centralized YouTube Extraction & Fallback Service with Multi-Cookie Rotation."""
+    """Centralized Multi-Provider External API & Local yt-dlp Extraction Pipeline."""
 
     @staticmethod
-    async def download_song(link: str) -> Optional[str]:
+    async def _try_shruti_api(video_id: str, is_video: bool) -> Optional[str]:
+        if not SHRUTI_API_URL:
+            return None
+        dest_ext = ".mp4" if is_video else ".mp3"
+        dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
+        media_type = "video" if is_video else "audio"
+        try:
+            LOGGER(__name__).info(f"[YT-API] Attempting Shruti API for {video_id} ({media_type})")
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+                url = f"{SHRUTI_API_URL}/download"
+                params = {"url": video_id, "type": media_type, "api_key": SHRUTI_API_KEY}
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status == 200:
+                        with open(dest_path, "wb") as f:
+                            async for chunk in resp.content.iter_chunked(131072):
+                                f.write(chunk)
+                        if is_valid_media_file(dest_path):
+                            LOGGER(__name__).info(f"[YT-API] Shruti API successful for {video_id}")
+                            return dest_path
+                        elif os.path.exists(dest_path):
+                            os.remove(dest_path)
+        except Exception as e:
+            LOGGER(__name__).warning(f"[YT-API] Shruti API failed for {video_id}: {e}")
+            if os.path.exists(dest_path):
+                try:
+                    os.remove(dest_path)
+                except Exception:
+                    pass
+        return None
+
+    @staticmethod
+    async def _try_pytdbot_api(video_id: str, is_video: bool) -> Optional[str]:
+        api_base = VIDEO_API_URL if (is_video and VIDEO_API_URL) else API_URL
+        if not api_base:
+            return None
+        dest_ext = ".mp4" if is_video else ".mp3"
+        dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
+        media_type = "video" if is_video else "audio"
+        try:
+            LOGGER(__name__).info(f"[YT-API] Attempting Pytdbot/QuickEarn API for {video_id}")
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+                url = f"{api_base}/download"
+                params = {"url": video_id, "type": media_type}
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status == 200:
+                        content_type = resp.headers.get("Content-Type", "")
+                        if "json" in content_type:
+                            data = await resp.json()
+                            direct_link = data.get("download_url") or data.get("url") or data.get("link")
+                            if direct_link and await _save_stream_to_file(session, direct_link, dest_path):
+                                LOGGER(__name__).info(f"[YT-API] Pytdbot API JSON direct stream successful for {video_id}")
+                                return dest_path
+                        else:
+                            with open(dest_path, "wb") as f:
+                                async for chunk in resp.content.iter_chunked(131072):
+                                    f.write(chunk)
+                            if is_valid_media_file(dest_path):
+                                LOGGER(__name__).info(f"[YT-API] Pytdbot API direct binary successful for {video_id}")
+                                return dest_path
+                            elif os.path.exists(dest_path):
+                                os.remove(dest_path)
+        except Exception as e:
+            LOGGER(__name__).warning(f"[YT-API] Pytdbot API failed for {video_id}: {e}")
+            if os.path.exists(dest_path):
+                try:
+                    os.remove(dest_path)
+                except Exception:
+                    pass
+        return None
+
+    @staticmethod
+    async def _try_cobalt_api(video_id: str, is_video: bool) -> Optional[str]:
+        cobalt_endpoints = [
+            COBALT_API_URL,
+            "https://api.cobalt.tools",
+            "https://cobalt.stream.fyi",
+        ]
+        dest_ext = ".mp4" if is_video else ".mp3"
+        dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
+        target_url = f"https://www.youtube.com/watch?v={video_id}"
+
+        for endpoint in cobalt_endpoints:
+            if not endpoint:
+                continue
+            try:
+                LOGGER(__name__).info(f"[YT-API] Attempting Cobalt API ({endpoint}) for {video_id}")
+                headers = {
+                    "User-Agent": "Mozilla/5.0",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
+                payload = {
+                    "url": target_url,
+                    "downloadMode": "auto" if is_video else "audio",
+                    "audioFormat": "mp3",
+                }
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    async with session.post(endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            direct_url = data.get("url")
+                            if direct_url and await _save_stream_to_file(session, direct_url, dest_path):
+                                LOGGER(__name__).info(f"[YT-API] Cobalt API successful for {video_id}")
+                                return dest_path
+            except Exception as e:
+                LOGGER(__name__).debug(f"[YT-API] Cobalt API instance ({endpoint}) failed for {video_id}: {e}")
+                if os.path.exists(dest_path):
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
+        return None
+
+    @staticmethod
+    async def _try_invidious_piped_api(video_id: str, is_video: bool) -> Optional[str]:
+        invidious_instances = [
+            f"https://inv.riverside.rocks/api/v1/videos/{video_id}",
+            f"https://pipedapi.kavin.rocks/streams/{video_id}",
+        ]
+        dest_ext = ".mp4" if is_video else ".mp3"
+        dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
+
+        for inst in invidious_instances:
+            try:
+                LOGGER(__name__).info(f"[YT-API] Attempting Invidious/Piped API for {video_id}")
+                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+                    async with session.get(inst, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            stream_url = None
+                            if "adaptiveFormats" in data:
+                                for fmt in data["adaptiveFormats"]:
+                                    if not is_video and "audio" in fmt.get("type", ""):
+                                        stream_url = fmt.get("url")
+                                        break
+                                    elif is_video and "video" in fmt.get("type", ""):
+                                        stream_url = fmt.get("url")
+                                        break
+                            elif "audioStreams" in data and not is_video:
+                                stream_url = data["audioStreams"][0].get("url")
+                            elif "videoStreams" in data and is_video:
+                                stream_url = data["videoStreams"][0].get("url")
+
+                            if stream_url and await _save_stream_to_file(session, stream_url, dest_path):
+                                LOGGER(__name__).info(f"[YT-API] Invidious/Piped API stream successful for {video_id}")
+                                return dest_path
+            except Exception as e:
+                LOGGER(__name__).debug(f"[YT-API] Invidious/Piped instance failed for {video_id}: {e}")
+                if os.path.exists(dest_path):
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
+        return None
+
+    @classmethod
+    async def download_song(cls, link: str) -> Optional[str]:
         video_id = extract_video_id(link)
         if not video_id or len(video_id) < 3:
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Invalid video_id extracted from link: {link}")
@@ -115,44 +297,32 @@ class YouTubeExtractor:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Using cached media file for video_id: {video_id}")
             return existing_file
 
-        file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+        # Step 1: External API System (Sequential Provider Fallback Pipeline)
+        api_providers = [
+            cls._try_shruti_api,
+            cls._try_pytdbot_api,
+            cls._try_cobalt_api,
+            cls._try_invidious_piped_api,
+        ]
 
-        # Attempt A: Shruti External API
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt A: External API download for {video_id}")
-            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
-                async with session.get(
-                    f"{API_URL}/download",
-                    params={"url": video_id, "type": "audio", "api_key": API_KEY},
-                    timeout=aiohttp.ClientTimeout(total=300)
-                ) as resp:
-                    if resp.status == 200:
-                        with open(file_path, "wb") as f:
-                            async for chunk in resp.content.iter_chunked(131072):
-                                f.write(chunk)
-                        if is_valid_media_file(file_path):
-                            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt A successful for {video_id}")
-                            return file_path
-                        else:
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-        except Exception as e:
-            LOGGER(__name__).error(f"[YT-DOWNLOAD] Attempt A (API) failed for {video_id}: {e}")
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+        for provider in api_providers:
+            try:
+                res_path = await provider(video_id, is_video=False)
+                if res_path and is_valid_media_file(res_path):
+                    return res_path
+            except Exception as e:
+                LOGGER(__name__).debug(f"[YT-API] API provider error: {e}")
 
+        # Step 2: Multi-Cookie local yt-dlp
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
         valid_cookie_files = get_valid_cookie_files()
         loop = asyncio.get_event_loop()
 
-        # Attempt B (Multi-Cookie Loop): Try each available valid cookie dataset sequentially
         if valid_cookie_files:
             for idx, cookie_file in enumerate(valid_cookie_files, 1):
                 try:
-                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp download for {video_id}")
+                    c_name = os.path.basename(cookie_file)
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp audio (Cookie #{idx} - {c_name}) for {video_id}")
                     ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
                     ydl_opts.update({
                         "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -170,21 +340,20 @@ class YouTubeExtractor:
                     )
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
-                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx}) successful for {video_id}")
+                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Cookie #{idx} successful for {video_id}")
                         return downloaded
                 except Exception as e:
                     err_type, err_msg = classify_ytdl_error(e)
                     if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
                         mark_cookie_unusable(cookie_file)
-                    LOGGER(__name__).warning(f"[YT-AUTH] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}) failed ({err_type}) for {video_id}: {err_msg}")
+                    LOGGER(__name__).warning(f"[YT-AUTH] Cookie #{idx} failed ({err_type}) for {video_id}: {err_msg}")
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
-                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx}) retrieved downloaded media file despite postprocessing error for {video_id}")
                         return downloaded
 
-        # Attempt C & D: yt-dlp without cookies
+        # Step 3: No-Cookie yt-dlp
         try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D: yt-dlp bestaudio (no cookies) for {video_id}")
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp audio (no cookies) for {video_id}")
             ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=False)
             ydl_opts_nocookie.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -202,18 +371,17 @@ class YouTubeExtractor:
             )
             downloaded = find_downloaded_file(video_id, is_video=False)
             if downloaded:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D successful for {video_id}")
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] No-cookie audio download successful for {video_id}")
                 return downloaded
         except Exception as e:
-            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Attempt C/D failed for {video_id}: {e}")
+            LOGGER(__name__).warning(f"[YT-DOWNLOAD] No-cookie audio download failed for {video_id}: {e}")
             downloaded = find_downloaded_file(video_id, is_video=False)
             if downloaded:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D retrieved downloaded file despite postprocessing error for {video_id}")
                 return downloaded
 
-        # Attempt E: Raw audio format fallback without postprocessing
+        # Step 4: Raw audio fallback without postprocessing
         try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt E: Raw audio fallback for {video_id}")
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Raw audio fallback for {video_id}")
             ydl_opts_raw = get_ytdl_base_opts(cookie_file=None, is_video=False)
             ydl_opts_raw.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -223,19 +391,18 @@ class YouTubeExtractor:
             )
             downloaded = find_downloaded_file(video_id, is_video=False)
             if downloaded:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt E successful for {video_id}")
                 return downloaded
         except Exception as e:
-            LOGGER(__name__).error(f"[YT-DOWNLOAD] Attempt E failed for {video_id}: {e}")
+            LOGGER(__name__).error(f"[YT-DOWNLOAD] Raw audio fallback failed for {video_id}: {e}")
             downloaded = find_downloaded_file(video_id, is_video=False)
             if downloaded:
                 return downloaded
 
-        LOGGER(__name__).critical(f"[YT-DOWNLOAD] All download fallbacks failed for video_id: {video_id}")
+        LOGGER(__name__).critical(f"[YT-DOWNLOAD] All audio download pipelines failed for video_id: {video_id}")
         return None
 
-    @staticmethod
-    async def download_video(link: str) -> Optional[str]:
+    @classmethod
+    async def download_video(cls, link: str) -> Optional[str]:
         video_id = extract_video_id(link)
         if not video_id or len(video_id) < 3:
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Invalid video_id extracted: {link}")
@@ -247,44 +414,31 @@ class YouTubeExtractor:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Using cached video file for video_id: {video_id}")
             return existing_file
 
-        file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
+        # Step 1: External API Video Providers
+        api_providers = [
+            cls._try_shruti_api,
+            cls._try_pytdbot_api,
+            cls._try_cobalt_api,
+            cls._try_invidious_piped_api,
+        ]
 
-        # Attempt A: Shruti API Video
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt A: External API video download for {video_id}")
-            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
-                async with session.get(
-                    f"{API_URL}/download",
-                    params={"url": video_id, "type": "video", "api_key": API_KEY},
-                    timeout=aiohttp.ClientTimeout(total=600)
-                ) as resp:
-                    if resp.status == 200:
-                        with open(file_path, "wb") as f:
-                            async for chunk in resp.content.iter_chunked(131072):
-                                f.write(chunk)
-                        if is_valid_media_file(file_path):
-                            LOGGER(__name__).info(f"[YT-DOWNLOAD] External API video download successful for {video_id}")
-                            return file_path
-                        else:
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-        except Exception as e:
-            LOGGER(__name__).error(f"[YT-DOWNLOAD] External API video download failed for {video_id}: {e}")
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+        for provider in api_providers:
+            try:
+                res_path = await provider(video_id, is_video=True)
+                if res_path and is_valid_media_file(res_path):
+                    return res_path
+            except Exception as e:
+                LOGGER(__name__).debug(f"[YT-API] API video provider error: {e}")
 
+        # Step 2: Local yt-dlp Video Multi-Cookie
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
         valid_cookie_files = get_valid_cookie_files()
         loop = asyncio.get_event_loop()
 
-        # Attempt B (Multi-Cookie Loop): Try each available valid cookie dataset sequentially
         if valid_cookie_files:
             for idx, cookie_file in enumerate(valid_cookie_files, 1):
                 try:
-                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp video for {video_id}")
+                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp video (Cookie #{idx}) for {video_id}")
                     ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=True)
                     ydl_opts.update({
                         "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -299,11 +453,11 @@ class YouTubeExtractor:
                     err_type, err_msg = classify_ytdl_error(e)
                     if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
                         mark_cookie_unusable(cookie_file)
-                    LOGGER(__name__).warning(f"[YT-AUTH] Video cookie #{idx} download failed ({err_type}) for {video_id}: {err_msg}")
+                    LOGGER(__name__).warning(f"[YT-AUTH] Video cookie #{idx} failed ({err_type}) for {video_id}: {err_msg}")
 
-        # Attempt C: yt-dlp video without cookies
+        # Step 3: Local yt-dlp Video No-Cookie
         try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C: yt-dlp video (no cookies) for {video_id}")
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp video (no cookies) for {video_id}")
             ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=True)
             ydl_opts_nocookie.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
@@ -315,9 +469,16 @@ class YouTubeExtractor:
             if downloaded:
                 return downloaded
         except Exception as e:
-            LOGGER(__name__).error(f"[YT-DOWNLOAD] yt-dlp video download (no cookies) failed for {video_id}: {e}")
+            LOGGER(__name__).error(f"[YT-DOWNLOAD] Video download (no cookies) failed for {video_id}: {e}")
 
-        LOGGER(__name__).critical(f"[YT-DOWNLOAD] All video download fallbacks failed for video_id: {video_id}")
+        # Step 4: Automatic Fallback to Audio Download to Guarantee Song Playback
+        LOGGER(__name__).warning(f"[YT-DOWNLOAD] All video extraction methods failed for {video_id}. Falling back to audio mode to prevent playback failure.")
+        audio_file = await cls.download_song(link)
+        if audio_file:
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Audio-only fallback successful for video request {video_id}")
+            return audio_file
+
+        LOGGER(__name__).critical(f"[YT-DOWNLOAD] All video and audio fallbacks failed for video_id: {video_id}")
         return None
 
 
@@ -644,11 +805,17 @@ class YouTubeAPI:
                 downloaded_file = await download_video(link)
             else:
                 downloaded_file = await download_song(link)
+
+            if not downloaded_file and (video or songvideo):
+                LOGGER(__name__).info("[YT-DOWNLOAD] Video download failed, retrying in audio mode...")
+                downloaded_file = await download_song(link)
+
             if not downloaded_file:
                 if is_song_downloader:
                     raise Exception("All download fallbacks failed for track")
                 else:
                     return None, False
+
             if is_song_downloader:
                 return downloaded_file
             else:
