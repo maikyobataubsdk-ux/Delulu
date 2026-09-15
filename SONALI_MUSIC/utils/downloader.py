@@ -10,6 +10,7 @@ from SONALI_MUSIC.utils.youtube_utils import (
     classify_ytdl_error,
     get_ytdl_base_opts,
     mark_cookie_unusable,
+    AudioCache,
 )
 
 
@@ -32,6 +33,9 @@ def download(url: str, my_hook=None) -> str:
     try:
         vid_id = extract_video_id(url)
         if vid_id:
+            cached_item = AudioCache.get(vid_id)
+            if cached_item and cached_item.get("local_path") and is_valid_media_file(cached_item["local_path"]):
+                return cached_item["local_path"]
             existing = find_downloaded_file_by_id(vid_id)
             if existing:
                 return existing
