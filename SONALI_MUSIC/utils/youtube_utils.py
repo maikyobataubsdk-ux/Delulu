@@ -2,24 +2,201 @@ import os
 import shutil
 import time
 import subprocess
-from typing import Dict, Any, Optional, Tuple, List, Union
+import socket
+from typing import Dict, Any, Optional, Tuple, List, Union, Set
 import yt_dlp
 from SONALI_MUSIC import LOGGER
 
 REQUIRED_AUTH_COOKIES = {"SID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID"}
 VISITOR_COOKIE_NAMES = {"PREF", "SOCS", "YSC", "VISITOR_INFO1_LIVE", "VISITOR_PRIVACY_METADATA", "__Secure-ROLLOUT_TOKEN", "GPS"}
 
+# In-memory session cache for cookie usability testing
+_UNUSABLE_COOKIES: Set[str] = set()
+_TESTED_COOKIES: Dict[str, bool] = {}
+
+
+def is_bgutil_server_running() -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", 4416)) == 0:
+                return True
+    except Exception:
+        pass
+
+    try:
+        res = subprocess.run(["pgrep", "-f", "bgutil.*server|bgutil-ytdlp"], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            pids = res.stdout.strip().split()
+            current_pid = str(os.getpid())
+            if any(pid != current_pid for pid in pids):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def get_ffmpeg_path() -> Optional[str]:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    candidates = [
+        "/home/jules/.local/share/ffmpeg_bin/ffmpeg",
+        os.path.expanduser("~/.local/share/ffmpeg_bin/ffmpeg"),
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ]
+    for c in candidates:
+        if os.path.exists(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def get_ffmpeg_version() -> str:
+    ffmpeg_path = get_ffmpeg_path()
+    if not ffmpeg_path:
+        return "NOT INSTALLED"
+    try:
+        res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            first_line = res.stdout.splitlines()[0]
+            return first_line.split("version")[1].strip().split()[0] if "version" in first_line else first_line[:30]
+    except Exception:
+        pass
+    return "INSTALLED (Version Unknown)"
+
+
+def get_yt_dlp_version() -> str:
+    try:
+        import yt_dlp.version
+        return getattr(yt_dlp.version, "__version__", "Unknown")
+    except Exception:
+        try:
+            return getattr(yt_dlp, "__version__", "Unknown")
+        except Exception:
+            return "Unknown"
+
+
+def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False) -> Dict[str, Any]:
+    """
+    Centralized yt-dlp configuration generator.
+    Uses dynamic audio format selection ('bestaudio/best') or video format selection.
+    """
+    format_selector = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" if is_video else "bestaudio/best"
+
+    opts = {
+        "format": format_selector,
+        "quiet": True,
+        "noplaylist": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "socket_timeout": 20,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_retries": 3,
+        "ignoreerrors": True,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
+        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
+    }
+
+    if not is_bgutil_server_running():
+        opts["no_plugins"] = True
+
+    ff_path = get_ffmpeg_path()
+    if ff_path:
+        opts["ffmpeg_location"] = ff_path
+
+    if cookie_file:
+        abs_cookie = os.path.abspath(cookie_file)
+        if os.path.exists(abs_cookie) and os.path.getsize(abs_cookie) > 0:
+            opts["cookiefile"] = abs_cookie
+
+    return opts
+
+
+def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, str]:
+    msg = str(error_msg_or_exc)
+    msg_lower = msg.lower()
+
+    if "requested format is not available" in msg_lower or "no formats found" in msg_lower or "format" in msg_lower and "not available" in msg_lower:
+        return "FORMAT_ERROR", "Requested audio/video format is not available for this track."
+
+    if "sign in to confirm you're not a bot" in msg_lower or "botguard" in msg_lower or "po_token" in msg_lower:
+        return "BOT_CHECK", "YouTube bot detection triggered requiring verification."
+
+    if "login_required" in msg_lower or "use --cookies" in msg_lower or "player response login_required" in msg_lower or "private video" in msg_lower:
+        return "AUTH_REQUIRED", "YouTube authentication required or missing/expired cookies."
+
+    if "video unavailable" in msg_lower or "copyright" in msg_lower or "removed" in msg_lower or "this video is unavailable" in msg_lower:
+        return "VIDEO_UNAVAILABLE", "Video is unavailable or restricted."
+
+    if "429" in msg_lower or "too many requests" in msg_lower or "rate limit" in msg_lower:
+        return "RATE_LIMIT", "YouTube rate limit encountered."
+
+    if "403" in msg_lower or "expired" in msg_lower or "forbidden" in msg_lower:
+        return "EXPIRED_STREAM", "Stream URL or request forbidden/expired."
+
+    if "socket" in msg_lower or "timeout" in msg_lower or "connection" in msg_lower or "http error" in msg_lower:
+        return "NETWORK_ERROR", "Network failure or timeout during extraction."
+
+    return "UNKNOWN_ERROR", msg
+
+
+def mark_cookie_unusable(cookie_path: str):
+    abs_p = os.path.abspath(cookie_path)
+    _UNUSABLE_COOKIES.add(abs_p)
+    _TESTED_COOKIES[abs_p] = False
+
+
+def mark_cookie_usable(cookie_path: str):
+    abs_p = os.path.abspath(cookie_path)
+    if abs_p in _UNUSABLE_COOKIES:
+        _UNUSABLE_COOKIES.remove(abs_p)
+    _TESTED_COOKIES[abs_p] = True
+
+
+def is_cookie_usable(cookie_path: str) -> bool:
+    abs_p = os.path.abspath(cookie_path)
+    return abs_p not in _UNUSABLE_COOKIES
+
+
+def test_cookie_file(cookie_path: str, force_test: bool = False) -> bool:
+    """Lightweight extraction test to verify if yt-dlp cookie authentication actually works."""
+    abs_p = os.path.abspath(cookie_path)
+    if not force_test and abs_p in _TESTED_COOKIES:
+        return _TESTED_COOKIES[abs_p]
+
+    if not os.path.exists(abs_p) or os.path.getsize(abs_p) == 0:
+        mark_cookie_unusable(abs_p)
+        return False
+
+    opts = get_ytdl_base_opts(abs_p)
+    test_url = "https://www.youtube.com/watch?v=hHuG7FIKgtc"
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(test_url, download=False)
+        mark_cookie_usable(abs_p)
+        return True
+    except Exception as e:
+        err_cat, _ = classify_ytdl_error(e)
+        if err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+            mark_cookie_unusable(abs_p)
+            return False
+        # If it's a network glitch or non-auth issue, keep it tentatively allowed
+        _TESTED_COOKIES[abs_p] = True
+        return True
+
 
 def get_cookie_files() -> List[str]:
     """Returns all available and non-empty cookie file paths in order of preference."""
     candidates = []
 
-    # 1. Environment variable if set
     env_cookie = os.environ.get("YOUTUBE_COOKIES")
     if env_cookie:
         candidates.append(env_cookie)
 
-    # 2. Known project paths for primary and secondary cookies
     project_paths = [
         "cookies/cookies.txt",
         "cookies/cookie1.txt",
@@ -43,7 +220,6 @@ def get_cookie_files() -> List[str]:
 
 
 def get_cookie_file() -> Optional[str]:
-    """Returns the primary valid cookie file if available, otherwise any first valid cookie file."""
     valid_files = get_valid_cookie_files()
     if valid_files:
         return valid_files[0]
@@ -51,7 +227,7 @@ def get_cookie_file() -> Optional[str]:
     return all_files[0] if all_files else None
 
 
-def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
+def analyze_cookies(cookie_path: Optional[str] = None, run_extraction_test: bool = False) -> Dict[str, Any]:
     if not cookie_path:
         cookie_path = get_cookie_file()
 
@@ -64,6 +240,7 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
         "found_auth_cookie_names": [],
         "found_visitor_cookie_names": [],
         "status": "MISSING",
+        "extraction_test": "SKIPPED",
         "cookie_path": cookie_path,
         "file_size": 0,
     }
@@ -104,13 +281,11 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
                     expiry_str = parts[4].strip()
                     cookie_name = parts[5].strip()
 
-                    # Check domain
                     if "youtube.com" in domain or "google.com" in domain:
-                        # Check expiry
                         try:
                             expiry = int(expiry_str)
                             if expiry > 0 and expiry < now:
-                                continue  # Expired
+                                continue
                         except ValueError:
                             pass
 
@@ -134,6 +309,10 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
         else:
             result["status"] = "INVALID"
 
+        if run_extraction_test:
+            test_pass = test_cookie_file(cookie_path)
+            result["extraction_test"] = "PASS" if test_pass else "FAIL"
+
     except Exception as e:
         LOGGER(__name__).error(f"Error analyzing cookie file {cookie_path}: {e}")
         result["status"] = "INVALID"
@@ -141,45 +320,20 @@ def analyze_cookies(cookie_path: Optional[str] = None) -> Dict[str, Any]:
     return result
 
 
-def get_valid_cookie_files() -> List[str]:
-    """Returns all cookie files that have 'VALID' status (or 'INCOMPLETE' as secondary fallback)."""
+def get_valid_cookie_files(filter_unusable: bool = True) -> List[str]:
     valid_files = []
     incomplete_files = []
 
     for c_path in get_cookie_files():
+        if filter_unusable and not is_cookie_usable(c_path):
+            continue
         analysis = analyze_cookies(c_path)
         if analysis["status"] == "VALID":
             valid_files.append(c_path)
         elif analysis["status"] == "INCOMPLETE":
             incomplete_files.append(c_path)
 
-    # Prioritize VALID cookies first, then INCOMPLETE if no VALID ones exist
     return valid_files if valid_files else incomplete_files
-
-
-import socket
-
-def is_bgutil_server_running() -> bool:
-    # 1. Try connecting to bgutil server HTTP port (default 4416)
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.5)
-            if s.connect_ex(("127.0.0.1", 4416)) == 0:
-                return True
-    except Exception:
-        pass
-
-    # 2. Check for running bgutil server process specifically
-    try:
-        res = subprocess.run(["pgrep", "-f", "bgutil.*server|bgutil-ytdlp"], capture_output=True, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            pids = res.stdout.strip().split()
-            current_pid = str(os.getpid())
-            if any(pid != current_pid for pid in pids):
-                return True
-    except Exception:
-        pass
-    return False
 
 
 def check_bgutil_and_potoken() -> Dict[str, Any]:
@@ -214,63 +368,6 @@ def check_bgutil_and_potoken() -> Dict[str, Any]:
     }
 
 
-def get_yt_dlp_version() -> str:
-    try:
-        return yt_dlp.__version__
-    except Exception:
-        return "Unknown"
-
-
-def get_ffmpeg_path() -> Optional[str]:
-    path = shutil.which("ffmpeg")
-    if path:
-        return path
-    candidates = [
-        "/home/jules/.local/share/ffmpeg_bin/ffmpeg",
-        os.path.expanduser("~/.local/share/ffmpeg_bin/ffmpeg"),
-        "/usr/bin/ffmpeg",
-        "/usr/local/bin/ffmpeg",
-    ]
-    for c in candidates:
-        if os.path.exists(c) and os.access(c, os.X_OK):
-            return c
-    return None
-
-
-def get_ffmpeg_version() -> str:
-    ffmpeg_path = get_ffmpeg_path()
-    if not ffmpeg_path:
-        return "NOT INSTALLED"
-    try:
-        res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=5)
-        if res.returncode == 0:
-            first_line = res.stdout.splitlines()[0]
-            return first_line.split("version")[1].strip().split()[0] if "version" in first_line else first_line[:30]
-    except Exception:
-        pass
-    return "INSTALLED (Version Unknown)"
-
-
-def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, str]:
-    msg = str(error_msg_or_exc)
-    msg_lower = msg.lower()
-
-    if (
-        "login_required" in msg_lower
-        or "sign in to confirm you're not a bot" in msg_lower
-        or "use --cookies" in msg_lower
-        or "no formats found" in msg_lower
-        or "player response login_required" in msg_lower
-        or "private video" in msg_lower
-    ):
-        return "AUTH_REQUIRED", "YouTube authentication required or missing/expired cookies."
-
-    if "po_token" in msg_lower or "pot" in msg_lower or "botguard" in msg_lower:
-        return "POTOKEN_REQUIRED", "PO Token provider failure or token missing."
-
-    return "EXTRACTION_FAILED", msg
-
-
 def log_startup_diagnostics() -> Dict[str, Any]:
     yt_ver = get_yt_dlp_version()
     ff_ver = get_ffmpeg_version()
@@ -282,11 +379,12 @@ def log_startup_diagnostics() -> Dict[str, Any]:
     LOGGER(__name__).info(f"[YT-DIAG] yt-dlp Version          : {yt_ver}")
     LOGGER(__name__).info(f"[YT-DIAG] FFmpeg Status           : {ff_ver}")
     LOGGER(__name__).info(f"[YT-AUTH] Found Cookie Files      : {len(cookie_files)}")
-    LOGGER(__name__).info(f"[YT-AUTH] Valid Cookie Files      : {len(valid_cookies)}")
+    LOGGER(__name__).info(f"[YT-AUTH] Usable Cookie Files     : {len(valid_cookies)}")
 
     for idx, c_path in enumerate(cookie_files, 1):
-        c_info = analyze_cookies(c_path)
-        LOGGER(__name__).info(f"[YT-AUTH] Cookie #{idx} ({os.path.basename(c_path)}) : {c_info['status']} ({c_info['auth_count']}/{len(REQUIRED_AUTH_COOKIES)} auth cookies)")
+        c_info = analyze_cookies(c_path, run_extraction_test=False)
+        usable_str = "USABLE" if is_cookie_usable(c_path) else "UNUSABLE"
+        LOGGER(__name__).info(f"[YT-AUTH] Cookie #{idx} ({os.path.basename(c_path)}) : {c_info['status']} ({c_info['auth_count']}/{len(REQUIRED_AUTH_COOKIES)} auth cookies) [{usable_str}]")
 
     LOGGER(__name__).info(f"[YT-PO] PO Token Provider Status : {pot_info['potoken_provider_status']}")
     LOGGER(__name__).info("=======================================================")
@@ -317,7 +415,7 @@ def get_health_status() -> str:
         "<b>📊 YouTube System Health Check</b>\n\n"
         f"<b>YT-DLP:</b> {yt_status} ({yt_ver})\n"
         f"<b>FFMPEG:</b> {ff_status}\n"
-        f"<b>Cookie Files:</b> {len(cookie_files)} total ({len(valid_cookies)} valid)\n"
+        f"<b>Cookie Files:</b> {len(cookie_files)} total ({len(valid_cookies)} usable)\n"
         f"<b>Cookies Status:</b> {cookie_status}\n"
         f"<b>PO Token:</b> {pot_status}\n"
         f"<b>BGUTIL:</b> {bgutil_status}\n"
@@ -332,15 +430,18 @@ def get_cookiecheck_status() -> str:
 
     msg = "<b>🍪 Cookie Validation Status</b>\n\n"
     for idx, c_path in enumerate(cookie_files, 1):
-        c_info = analyze_cookies(c_path)
-        file_ok = "OK" if c_info["exists"] else "MISSING"
-        format_ok = "OK" if c_info["valid_format"] else "INVALID"
+        c_info = analyze_cookies(c_path, run_extraction_test=False)
+        file_ok = "FOUND" if c_info["exists"] else "MISSING"
+        format_ok = "PARSEABLE" if c_info["valid_format"] else "INVALID_FORMAT"
+        contains_yt = "CONTAINS_YOUTUBE_COOKIES" if c_info["youtube_count"] > 0 else "NO_YOUTUBE_COOKIES"
+        test_status = "PASS" if is_cookie_usable(c_path) else "FAIL"
 
         msg += (
             f"<b>Cookie #{idx}:</b> <code>{os.path.basename(c_path)}</code>\n"
             f"<b>File:</b> {file_ok} | <b>Format:</b> {format_ok}\n"
+            f"<b>YouTube Cookies:</b> {contains_yt}\n"
             f"<b>Auth Cookies:</b> {c_info['auth_count']} / {len(REQUIRED_AUTH_COOKIES)}\n"
-            f"<b>Status:</b> {c_info['status']}\n\n"
+            f"<b>EXTRACTION_TEST:</b> {test_status}\n\n"
         )
 
     valid_count = len(get_valid_cookie_files())

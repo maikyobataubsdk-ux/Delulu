@@ -16,6 +16,8 @@ from SONALI_MUSIC.utils.youtube_utils import (
     classify_ytdl_error,
     get_ffmpeg_path,
     is_bgutil_server_running,
+    get_ytdl_base_opts,
+    mark_cookie_unusable,
 )
 
 try:
@@ -95,31 +97,6 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
     return None
 
 
-def get_ytdl_base_opts(cookie_file: Optional[str] = None) -> Dict[str, Any]:
-    opts = {
-        "format": "bestaudio/bestvideo+bestaudio/best",
-        "quiet": True,
-        "noplaylist": True,
-        "no_warnings": True,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "socket_timeout": 20,
-        "retries": 5,
-        "fragment_retries": 5,
-        "extractor_retries": 3,
-        "ignoreerrors": True,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
-    }
-    if not is_bgutil_server_running():
-        opts["no_plugins"] = True
-    ff_path = get_ffmpeg_path()
-    if ff_path:
-        opts["ffmpeg_location"] = ff_path
-    if cookie_file:
-        opts["cookiefile"] = os.path.abspath(cookie_file)
-    return opts
 
 
 class YouTubeExtractor:
@@ -176,7 +153,7 @@ class YouTubeExtractor:
             for idx, cookie_file in enumerate(valid_cookie_files, 1):
                 try:
                     LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp download for {video_id}")
-                    ydl_opts = get_ytdl_base_opts(cookie_file)
+                    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
                     ydl_opts.update({
                         "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
                     })
@@ -197,6 +174,8 @@ class YouTubeExtractor:
                         return downloaded
                 except Exception as e:
                     err_type, err_msg = classify_ytdl_error(e)
+                    if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                        mark_cookie_unusable(cookie_file)
                     LOGGER(__name__).warning(f"[YT-AUTH] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}) failed ({err_type}) for {video_id}: {err_msg}")
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
@@ -206,7 +185,7 @@ class YouTubeExtractor:
         # Attempt C & D: yt-dlp without cookies
         try:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C/D: yt-dlp bestaudio (no cookies) for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
+            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=False)
             ydl_opts_nocookie.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             })
@@ -235,7 +214,7 @@ class YouTubeExtractor:
         # Attempt E: Raw audio format fallback without postprocessing
         try:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt E: Raw audio fallback for {video_id}")
-            ydl_opts_raw = get_ytdl_base_opts(cookie_file=None)
+            ydl_opts_raw = get_ytdl_base_opts(cookie_file=None, is_video=False)
             ydl_opts_raw.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             })
@@ -306,9 +285,8 @@ class YouTubeExtractor:
             for idx, cookie_file in enumerate(valid_cookie_files, 1):
                 try:
                     LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt B (Cookie #{idx} - {os.path.basename(cookie_file)}): yt-dlp video for {video_id}")
-                    ydl_opts = get_ytdl_base_opts(cookie_file)
+                    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=True)
                     ydl_opts.update({
-                        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                         "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
                     })
                     await loop.run_in_executor(
@@ -319,14 +297,15 @@ class YouTubeExtractor:
                         return downloaded
                 except Exception as e:
                     err_type, err_msg = classify_ytdl_error(e)
+                    if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                        mark_cookie_unusable(cookie_file)
                     LOGGER(__name__).warning(f"[YT-AUTH] Video cookie #{idx} download failed ({err_type}) for {video_id}: {err_msg}")
 
         # Attempt C: yt-dlp video without cookies
         try:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Attempt C: yt-dlp video (no cookies) for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None)
+            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=True)
             ydl_opts_nocookie.update({
-                "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             })
             await loop.run_in_executor(
@@ -380,7 +359,7 @@ class YouTubeAPI:
         target = query_or_url if ("youtube.com" in query_or_url or "youtu.be" in query_or_url) else f"ytsearch5:{query_or_url}"
 
         for idx, cookie_file in enumerate(cookie_candidates, 1):
-            ydl_opts = get_ytdl_base_opts(cookie_file)
+            ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file)
             def _extract():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(target, download=False)
@@ -413,6 +392,8 @@ class YouTubeAPI:
                         return track_details, v_id
             except Exception as e:
                 err_type, err_msg = classify_ytdl_error(e)
+                if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                    mark_cookie_unusable(cookie_file)
                 LOGGER(__name__).warning(f"[YT-EXTRACT] Candidate #{idx} error ({err_type}) for {query_or_url}: {err_msg}")
         return None
 
@@ -589,7 +570,7 @@ class YouTubeAPI:
 
         loop = asyncio.get_event_loop()
         for idx, cookie_file in enumerate(cookie_candidates, 1):
-            ytdl_opts = get_ytdl_base_opts(cookie_file)
+            ytdl_opts = get_ytdl_base_opts(cookie_file=cookie_file)
             def _extract_formats():
                 with yt_dlp.YoutubeDL(ytdl_opts) as ydl:
                     return ydl.extract_info(link, download=False)
@@ -614,6 +595,9 @@ class YouTubeAPI:
                     if formats_available:
                         return formats_available, link
             except Exception as e:
+                err_type, _ = classify_ytdl_error(e)
+                if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                    mark_cookie_unusable(cookie_file)
                 LOGGER(__name__).error(f"[YT-EXTRACT] YouTube.formats candidate #{idx} error: {e}")
         return formats_available, link
 
