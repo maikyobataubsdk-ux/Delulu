@@ -23,10 +23,13 @@ UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/spicycodez/DeluluMus
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 GIT_TOKEN = getenv("GIT_TOKEN", None)
 
-#API_URL = getenv("API_URL", 'https://pytdbotapi.thequickearn.xyz') #youtube song url
-#VIDEO_API_URL = getenv("VIDEO_API_URL", 'https://api.video.thequickearn.xyz')
-YTPROXY_URL = getenv("YTPROXY_URL", 'https://tgapi.xbitcode.com') ## xBit Music Endpoint.
-YT_API_KEY = getenv("YT_API_KEY" , None ) ## Your API key like: xbit_10000000xx0233 Get from  https://t.me/tgmusic_apibot
+API_URL = getenv("API_URL", 'https://pytdbotapi.thequickearn.xyz')
+VIDEO_API_URL = getenv("VIDEO_API_URL", 'https://api.video.thequickearn.xyz')
+SHRUTI_API_URL = getenv("SHRUTI_API_URL", 'https://api.shrutibots.site')
+SHRUTI_API_KEY = getenv("SHRUTI_API_KEY", 'ShrutiBotsjyOuNr6aH5inWY06YDYJ')
+COBALT_API_URL = getenv("COBALT_API_URL", 'https://api.cobalt.tools')
+YTPROXY_URL = getenv("YTPROXY_URL", 'https://tgapi.xbitcode.com')
+YT_API_KEY = getenv("YT_API_KEY", None)
 
 PRIVACY_LINK = getenv("PRIVACY_LINK", "")
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/II_SHAYRI_KI_DUNIYA_II")

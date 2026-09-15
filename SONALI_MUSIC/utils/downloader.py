@@ -1,7 +1,10 @@
 import os
+import asyncio
+import concurrent.futures
 from os import path
 import yt_dlp
 from SONALI_MUSIC import LOGGER
+from SONALI_MUSIC.platforms.Youtube import YouTubeExtractor, extract_video_id, is_valid_media_file
 from SONALI_MUSIC.utils.youtube_utils import (
     get_valid_cookie_files,
     classify_ytdl_error,
@@ -17,7 +20,7 @@ def find_downloaded_file_by_id(vid_id: str) -> str:
     for f in os.listdir(downloads_dir):
         if f.startswith(f"{vid_id}."):
             fp = path.join(downloads_dir, f)
-            if os.path.exists(fp) and os.path.getsize(fp) > 1024:
+            if is_valid_media_file(fp):
                 return fp
     return None
 
@@ -25,6 +28,33 @@ def find_downloaded_file_by_id(vid_id: str) -> str:
 def download(url: str, my_hook=None) -> str:
     os.makedirs("downloads", exist_ok=True)
 
+    # Attempt 1: Centralized API System via YouTubeExtractor
+    try:
+        vid_id = extract_video_id(url)
+        if vid_id:
+            existing = find_downloaded_file_by_id(vid_id)
+            if existing:
+                return existing
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                res = pool.submit(asyncio.run, YouTubeExtractor.download_song(url)).result()
+        else:
+            res = loop.run_until_complete(YouTubeExtractor.download_song(url))
+
+        if res and is_valid_media_file(res):
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Downloader helper retrieved media using API system: {res}")
+            return res
+    except Exception as e:
+        LOGGER(__name__).warning(f"[YT-DOWNLOAD] Downloader helper API attempt encountered error: {e}")
+
+    # Attempt 2: Local yt-dlp Multi-Cookie and No-Cookie Sequential Fallback
     valid_cookie_files = get_valid_cookie_files()
     cookie_candidates = valid_cookie_files + [None]
 
@@ -81,7 +111,7 @@ def download(url: str, my_hook=None) -> str:
 
     if info and 'id' in info and 'ext' in info:
         xyz = path.join("downloads", f"{info['id']}.{info['ext']}")
-        if os.path.exists(xyz) and os.path.getsize(xyz) > 1024:
+        if is_valid_media_file(xyz):
             return xyz
 
     return None
