@@ -1,14 +1,165 @@
 import os
 import shutil
 import time
+import json
 import subprocess
 import socket
+import urllib.parse
 from typing import Dict, Any, Optional, Tuple, List, Union, Set
 import yt_dlp
+import config
 from SONALI_MUSIC import LOGGER
 
 REQUIRED_AUTH_COOKIES = {"SID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID"}
 VISITOR_COOKIE_NAMES = {"PREF", "SOCS", "YSC", "VISITOR_INFO1_LIVE", "VISITOR_PRIVACY_METADATA", "__Secure-ROLLOUT_TOKEN", "GPS"}
+
+CACHE_FILE_PATH = os.path.abspath(os.path.join("downloads", "audio_cache.json"))
+
+
+class CircuitBreaker:
+    """
+    Tracks external API endpoint availability and failures.
+    open: true (disabled/failing), false (active/healthy)
+    """
+
+    _providers: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def _get_provider_state(cls, host: str) -> Dict[str, Any]:
+        if host not in cls._providers:
+            cls._providers[host] = {
+                "consecutive_fails": 0,
+                "disabled_until": 0,
+                "open": False,
+            }
+        return cls._providers[host]
+
+    @classmethod
+    def is_available(cls, url_or_host: str) -> bool:
+        if not url_or_host:
+            return False
+        host = urllib.parse.urlparse(url_or_host).netloc or url_or_host
+        state = cls._get_provider_state(host)
+        now = time.time()
+        if state["disabled_until"] > now:
+            return False
+        if state["disabled_until"] != 0 and state["disabled_until"] <= now:
+            # Half-open test transition
+            state["disabled_until"] = 0
+            state["open"] = False
+        return not state["open"]
+
+    @classmethod
+    def record_failure(cls, url_or_host: str, error_type: str = "general", status_code: Optional[int] = None, retry_after: Optional[int] = None):
+        if not url_or_host:
+            return
+        host = urllib.parse.urlparse(url_or_host).netloc or url_or_host
+        state = cls._get_provider_state(host)
+        now = time.time()
+        state["consecutive_fails"] += 1
+
+        disable_duration = 300  # Default 5 minutes for general 5xx / failures
+
+        if error_type == "dns" or "name or service not known" in str(error_type).lower():
+            disable_duration = 1800  # 30 minutes for DNS failure
+        elif status_code == 429 or error_type == "rate_limit":
+            disable_duration = retry_after if retry_after and retry_after > 0 else 600
+        elif status_code and 500 <= status_code < 600:
+            disable_duration = 300
+
+        if state["consecutive_fails"] >= 3 or error_type == "dns":
+            state["open"] = True
+            state["disabled_until"] = now + disable_duration
+            LOGGER(__name__).warning(f"[CIRCUIT-BREAKER] Circuit opened for host '{host}' (disabled for {disable_duration}s). Failure: {error_type}")
+
+    @classmethod
+    def record_success(cls, url_or_host: str):
+        if not url_or_host:
+            return
+        host = urllib.parse.urlparse(url_or_host).netloc or url_or_host
+        state = cls._get_provider_state(host)
+        state["consecutive_fails"] = 0
+        state["disabled_until"] = 0
+        state["open"] = False
+
+
+class AudioCache:
+    """
+    JSON file cache storing YouTube track download records:
+    key = youtube video_id
+    value = {source, video_id, title, duration, telegram_file_id, local_path}
+    """
+
+    _cache: Dict[str, Dict[str, Any]] = {}
+    _loaded: bool = False
+
+    @classmethod
+    def _load(cls):
+        if cls._loaded:
+            return
+        os.makedirs(os.path.dirname(CACHE_FILE_PATH), exist_ok=True)
+        if os.path.exists(CACHE_FILE_PATH):
+            try:
+                with open(CACHE_FILE_PATH, "r", encoding="utf-8") as f:
+                    cls._cache = json.load(f)
+            except Exception as e:
+                LOGGER(__name__).error(f"[AUDIO-CACHE] Error loading audio cache: {e}")
+                cls._cache = {}
+        cls._loaded = True
+
+    @classmethod
+    def _save(cls):
+        os.makedirs(os.path.dirname(CACHE_FILE_PATH), exist_ok=True)
+        try:
+            with open(CACHE_FILE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cls._cache, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            LOGGER(__name__).error(f"[AUDIO-CACHE] Error saving audio cache: {e}")
+
+    @classmethod
+    def get(cls, video_id: str) -> Optional[Dict[str, Any]]:
+        cls._load()
+        if not video_id:
+            return None
+        item = cls._cache.get(video_id)
+        if not item:
+            return None
+
+        local_path = item.get("local_path")
+        if local_path and os.path.exists(local_path) and os.path.getsize(local_path) > 1024:
+            return item
+        elif item.get("telegram_file_id"):
+            return item
+
+        # Invalidate missing file entry
+        cls._cache.pop(video_id, None)
+        cls._save()
+        return None
+
+    @classmethod
+    def set(
+        cls,
+        video_id: str,
+        local_path: Optional[str] = None,
+        title: str = "",
+        duration: Union[int, str] = 0,
+        source: str = "youtube",
+        telegram_file_id: Optional[str] = None,
+    ):
+        cls._load()
+        if not video_id:
+            return
+        cls._cache[video_id] = {
+            "source": source,
+            "video_id": video_id,
+            "title": title,
+            "duration": duration,
+            "telegram_file_id": telegram_file_id,
+            "local_path": local_path,
+            "cached_at": time.time(),
+        }
+        cls._save()
+        LOGGER(__name__).info(f"[AUDIO-CACHE] Cached track record for video_id: {video_id}")
 
 # In-memory session cache for cookie usability testing
 _UNUSABLE_COOKIES: Set[str] = set()
@@ -80,16 +231,22 @@ def get_yt_dlp_version() -> str:
 def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False) -> Dict[str, Any]:
     """
     Centralized yt-dlp configuration generator.
-    Uses dynamic audio format selection or video format selection and adjusts player_client
-    based on cookie presence.
+    Uses relaxed audio format selector with 'best' as final fallback.
+    Supports bgutil PO token provider via extractor_args.
     """
     format_selector = (
         "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         if is_video
-        else "bestaudio/bestaudio*/best/ba/b"
+        else "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
     )
 
-    player_clients = ["mweb", "web", "ios", "android"] if cookie_file else ["ios", "android", "mweb", "web"]
+    player_clients = ["mweb", "web", "ios", "android"] if cookie_file else ["mweb", "ios", "android", "web"]
+
+    yt_extractor_args: Dict[str, Any] = {"player_client": player_clients}
+
+    pot_url = getattr(config, "POT_PROVIDER_URL", "http://127.0.0.1:4416")
+    if is_bgutil_server_running() and pot_url:
+        yt_extractor_args["po_token"] = [f"web+{pot_url}"]
 
     opts = {
         "format": format_selector,
@@ -105,7 +262,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
         "ignoreerrors": True,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": player_clients}},
+        "extractor_args": {"youtube": yt_extractor_args},
     }
 
     if not is_bgutil_server_running():
@@ -127,10 +284,13 @@ def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, s
     msg = str(error_msg_or_exc)
     msg_lower = msg.lower()
 
-    if "requested format is not available" in msg_lower or "no formats found" in msg_lower or "format" in msg_lower and "not available" in msg_lower:
+    if "name or service not known" in msg_lower or "gaierror" in msg_lower or "nodename nor servname provided" in msg_lower:
+        return "DNS_ERROR", "DNS resolution failed for host."
+
+    if "requested format is not available" in msg_lower or "no formats found" in msg_lower or ("format" in msg_lower and "not available" in msg_lower):
         return "FORMAT_ERROR", "Requested audio/video format is not available for this track."
 
-    if "sign in to confirm you're not a bot" in msg_lower or "botguard" in msg_lower or "po_token" in msg_lower:
+    if "sign in to confirm you're not a bot" in msg_lower or "botguard" in msg_lower or "po_token" in msg_lower or "confirm you're not a bot" in msg_lower:
         return "BOT_CHECK", "YouTube bot detection triggered requiring verification."
 
     if "login_required" in msg_lower or "use --cookies" in msg_lower or "player response login_required" in msg_lower or "private video" in msg_lower:
@@ -142,8 +302,11 @@ def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, s
     if "429" in msg_lower or "too many requests" in msg_lower or "rate limit" in msg_lower:
         return "RATE_LIMIT", "YouTube rate limit encountered."
 
-    if "403" in msg_lower or "expired" in msg_lower or "forbidden" in msg_lower:
-        return "EXPIRED_STREAM", "Stream URL or request forbidden/expired."
+    if "403" in msg_lower or "forbidden" in msg_lower or "http error 403" in msg_lower:
+        return "HTTP_403", "HTTP 403 Forbidden received from endpoint."
+
+    if "expired" in msg_lower:
+        return "EXPIRED_STREAM", "Stream URL or request expired."
 
     if "socket" in msg_lower or "timeout" in msg_lower or "connection" in msg_lower or "http error" in msg_lower:
         return "NETWORK_ERROR", "Network failure or timeout during extraction."

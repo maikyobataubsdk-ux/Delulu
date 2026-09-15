@@ -10,7 +10,7 @@ import aiohttp
 
 import config
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
+from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn, clean_song_title
 from SONALI_MUSIC.utils.youtube_utils import (
     get_cookie_file,
     get_cookie_files,
@@ -21,6 +21,8 @@ from SONALI_MUSIC.utils.youtube_utils import (
     is_bgutil_server_running,
     get_ytdl_base_opts,
     mark_cookie_unusable,
+    CircuitBreaker,
+    AudioCache,
 )
 
 try:
@@ -32,12 +34,13 @@ except ImportError:
         VideosSearch = None
         Playlist = None
 
-API_URL = getattr(config, "API_URL", "https://pytdbotapi.thequickearn.xyz")
-VIDEO_API_URL = getattr(config, "VIDEO_API_URL", "https://api.video.thequickearn.xyz")
-SHRUTI_API_URL = getattr(config, "SHRUTI_API_URL", "https://api.shrutibots.site")
-SHRUTI_API_KEY = getattr(config, "SHRUTI_API_KEY", "ShrutiBotsjyOuNr6aH5inWY06YDYJ")
-COBALT_API_URL = getattr(config, "COBALT_API_URL", "https://api.cobalt.tools")
-YTPROXY_URL = getattr(config, "YTPROXY_URL", "https://tgapi.xbitcode.com")
+API_URL = getattr(config, "API_URL", None)
+VIDEO_API_URL = getattr(config, "VIDEO_API_URL", None)
+SHRUTI_API_URL = getattr(config, "SHRUTI_API_URL", None)
+SHRUTI_API_KEY = getattr(config, "SHRUTI_API_KEY", None)
+SELF_HOSTED_COBALT_URL = getattr(config, "SELF_HOSTED_COBALT_URL", None)
+YTPROXY_URL = getattr(config, "YTPROXY_URL", None)
+POT_PROVIDER_URL = getattr(config, "POT_PROVIDER_URL", "http://127.0.0.1:4416")
 
 DOWNLOAD_DIR = os.path.abspath("downloads")
 DEFAULT_HEADERS = {
@@ -130,14 +133,24 @@ class YouTubeExtractor:
     """Centralized Multi-Provider External API & Local yt-dlp Extraction Pipeline."""
 
     @staticmethod
-    async def _try_jiosaavn_api(video_id: str, is_video: bool) -> Optional[str]:
+    async def _try_jiosaavn_api(video_id: str, is_video: bool, title: str = "", artist: str = "", duration_sec: int = 0) -> Optional[str]:
         if is_video:
             return None
         dest_ext = ".mp3"
         dest_filename = f"{video_id}{dest_ext}"
+        search_query = clean_song_title(title) if title else video_id
+        if not search_query or search_query == video_id:
+            LOGGER(__name__).warning(f"[YT-API] JioSaavn fallback skipped for {video_id}: No clean metadata/title available")
+            return None
         try:
-            LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio fallback for {video_id}")
-            res_path = await JioSaavn.download_song_by_query(video_id, dest_filename)
+            LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio fallback for '{search_query}' ({video_id})")
+            res_path = await JioSaavn.download_song_by_query(
+                query=search_query,
+                dest_filename=dest_filename,
+                target_title=title,
+                target_artist=artist,
+                target_duration=duration_sec,
+            )
             if res_path and is_valid_media_file(res_path):
                 LOGGER(__name__).info(f"[YT-API] JioSaavn audio download successful for {video_id}")
                 return res_path
@@ -147,7 +160,7 @@ class YouTubeExtractor:
 
     @staticmethod
     async def _try_shruti_api(video_id: str, is_video: bool) -> Optional[str]:
-        if not SHRUTI_API_URL:
+        if not SHRUTI_API_URL or not CircuitBreaker.is_available(SHRUTI_API_URL):
             return None
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
@@ -157,17 +170,22 @@ class YouTubeExtractor:
             async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
                 url = f"{SHRUTI_API_URL}/download"
                 params = {"url": video_id, "type": media_type, "api_key": SHRUTI_API_KEY}
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     if resp.status == 200:
                         with open(dest_path, "wb") as f:
                             async for chunk in resp.content.iter_chunked(131072):
                                 f.write(chunk)
                         if is_valid_media_file(dest_path):
+                            CircuitBreaker.record_success(SHRUTI_API_URL)
                             LOGGER(__name__).info(f"[YT-API] Shruti API successful for {video_id}")
                             return dest_path
                         elif os.path.exists(dest_path):
                             os.remove(dest_path)
+                    else:
+                        CircuitBreaker.record_failure(SHRUTI_API_URL, status_code=resp.status)
         except Exception as e:
+            err_cat, _ = classify_ytdl_error(e)
+            CircuitBreaker.record_failure(SHRUTI_API_URL, error_type=err_cat)
             LOGGER(__name__).warning(f"[YT-API] Shruti API failed for {video_id}: {e}")
             if os.path.exists(dest_path):
                 try:
@@ -179,7 +197,7 @@ class YouTubeExtractor:
     @staticmethod
     async def _try_pytdbot_api(video_id: str, is_video: bool) -> Optional[str]:
         api_base = VIDEO_API_URL if (is_video and VIDEO_API_URL) else API_URL
-        if not api_base:
+        if not api_base or not CircuitBreaker.is_available(api_base):
             return None
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
@@ -189,13 +207,14 @@ class YouTubeExtractor:
             async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
                 url = f"{api_base}/download"
                 params = {"url": video_id, "type": media_type}
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     if resp.status == 200:
                         content_type = resp.headers.get("Content-Type", "")
                         if "json" in content_type:
                             data = await resp.json()
                             direct_link = data.get("download_url") or data.get("url") or data.get("link")
                             if direct_link and await _save_stream_to_file(session, direct_link, dest_path):
+                                CircuitBreaker.record_success(api_base)
                                 LOGGER(__name__).info(f"[YT-API] Pytdbot API JSON direct stream successful for {video_id}")
                                 return dest_path
                         else:
@@ -203,11 +222,16 @@ class YouTubeExtractor:
                                 async for chunk in resp.content.iter_chunked(131072):
                                     f.write(chunk)
                             if is_valid_media_file(dest_path):
+                                CircuitBreaker.record_success(api_base)
                                 LOGGER(__name__).info(f"[YT-API] Pytdbot API direct binary successful for {video_id}")
                                 return dest_path
                             elif os.path.exists(dest_path):
                                 os.remove(dest_path)
+                    else:
+                        CircuitBreaker.record_failure(api_base, status_code=resp.status)
         except Exception as e:
+            err_cat, _ = classify_ytdl_error(e)
+            CircuitBreaker.record_failure(api_base, error_type=err_cat)
             LOGGER(__name__).warning(f"[YT-API] Pytdbot API failed for {video_id}: {e}")
             if os.path.exists(dest_path):
                 try:
@@ -218,46 +242,44 @@ class YouTubeExtractor:
 
     @staticmethod
     async def _try_cobalt_api(video_id: str, is_video: bool) -> Optional[str]:
-        cobalt_endpoints = [
-            COBALT_API_URL,
-            "https://api.cobalt.tools",
-            "https://cobalt.stream.fyi",
-            "https://cobalt.qtf.custom",
-        ]
+        if not SELF_HOSTED_COBALT_URL or not CircuitBreaker.is_available(SELF_HOSTED_COBALT_URL):
+            return None
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
         target_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        for endpoint in cobalt_endpoints:
-            if not endpoint:
-                continue
-            try:
-                LOGGER(__name__).info(f"[YT-API] Attempting Cobalt API ({endpoint}) for {video_id}")
-                headers = {
-                    "User-Agent": "Mozilla/5.0",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                }
-                payload = {
-                    "url": target_url,
-                    "downloadMode": "auto" if is_video else "audio",
-                    "audioFormat": "mp3",
-                }
-                async with aiohttp.ClientSession(headers=headers) as session:
-                    async with session.post(endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            direct_url = data.get("url")
-                            if direct_url and await _save_stream_to_file(session, direct_url, dest_path):
-                                LOGGER(__name__).info(f"[YT-API] Cobalt API successful for {video_id}")
-                                return dest_path
-            except Exception as e:
-                LOGGER(__name__).debug(f"[YT-API] Cobalt API instance ({endpoint}) failed for {video_id}: {e}")
-                if os.path.exists(dest_path):
-                    try:
-                        os.remove(dest_path)
-                    except Exception:
-                        pass
+        try:
+            LOGGER(__name__).info(f"[YT-API] Attempting Self-Hosted Cobalt API ({SELF_HOSTED_COBALT_URL}) for {video_id}")
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            payload = {
+                "url": target_url,
+                "downloadMode": "auto" if is_video else "audio",
+                "audioFormat": "mp3",
+            }
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(SELF_HOSTED_COBALT_URL, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        direct_url = data.get("url")
+                        if direct_url and await _save_stream_to_file(session, direct_url, dest_path):
+                            CircuitBreaker.record_success(SELF_HOSTED_COBALT_URL)
+                            LOGGER(__name__).info(f"[YT-API] Cobalt API successful for {video_id}")
+                            return dest_path
+                    else:
+                        CircuitBreaker.record_failure(SELF_HOSTED_COBALT_URL, status_code=resp.status)
+        except Exception as e:
+            err_cat, _ = classify_ytdl_error(e)
+            CircuitBreaker.record_failure(SELF_HOSTED_COBALT_URL, error_type=err_cat)
+            LOGGER(__name__).debug(f"[YT-API] Cobalt API instance failed for {video_id}: {e}")
+            if os.path.exists(dest_path):
+                try:
+                    os.remove(dest_path)
+                except Exception:
+                    pass
         return None
 
     @staticmethod
@@ -334,110 +356,58 @@ class YouTubeExtractor:
             except Exception as e:
                 LOGGER(__name__).debug(f"[YT-API] API provider error: {e}")
 
-        # Step 2: Multi-Cookie local yt-dlp
+        # Step 2: Multi-Method Local yt-dlp Sequential Download Pipeline
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
-        valid_cookie_files = get_valid_cookie_files()
         loop = asyncio.get_event_loop()
+        valid_cookie_files = get_valid_cookie_files()
+        primary_cookie = valid_cookie_files[0] if valid_cookie_files else None
 
-        if valid_cookie_files:
-            for idx, cookie_file in enumerate(valid_cookie_files, 1):
+        modes = [
+            ("mweb_pot_nocookies", ["mweb"], None, True),
+            ("default_pot_nocookies", ["mweb", "ios", "android", "web"], None, True),
+            ("mweb_cookies", ["mweb"], primary_cookie, False),
+            ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
+            ("web_safari_emergency", ["web_safari", "mweb", "web"], primary_cookie, False),
+        ]
+
+        for mode_name, clients, cookie_file, use_pot in modes:
+            for retry in range(1, 3):
                 try:
-                    c_name = os.path.basename(cookie_file)
-                    LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp audio (Cookie #{idx} - {c_name}) for {video_id}")
+                    c_label = os.path.basename(cookie_file) if cookie_file else "no-cookies"
+                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying mode '{mode_name}' (attempt {retry}/2, cookie={c_label}) for {video_id}")
                     ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
-                    ydl_opts.update({
-                        "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                    })
-                    if get_ffmpeg_path():
-                        ydl_opts["postprocessors"] = [
-                            {
-                                "key": "FFmpegExtractAudio",
-                                "preferredcodec": "mp3",
-                                "preferredquality": "192",
-                            }
-                        ]
+                    yt_args = {"player_client": clients}
+                    if use_pot and is_bgutil_server_running() and POT_PROVIDER_URL:
+                        yt_args["po_token"] = [f"web+{POT_PROVIDER_URL}"]
+                    ydl_opts["extractor_args"] = {"youtube": yt_args}
+                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
+
                     await loop.run_in_executor(
-                        None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([yt_link])
+                        None, lambda opts=ydl_opts: yt_dlp.YoutubeDL(opts).download([yt_link])
                     )
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
-                        LOGGER(__name__).info(f"[YT-DOWNLOAD] Cookie #{idx} successful for {video_id}")
+                        LOGGER(__name__).info(f"[YT-PIPELINE] Mode '{mode_name}' successful for {video_id}")
+                        AudioCache.set(video_id=video_id, local_path=downloaded, source="youtube")
                         return downloaded
                 except Exception as e:
-                    err_type, err_msg = classify_ytdl_error(e)
-                    if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                    err_cat, err_msg = classify_ytdl_error(e)
+                    LOGGER(__name__).warning(f"[YT-PIPELINE] Mode '{mode_name}' attempt {retry} failed ({err_cat}): {err_msg}")
+                    if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
                         mark_cookie_unusable(cookie_file)
-                    LOGGER(__name__).warning(f"[YT-AUTH] Cookie #{idx} failed ({err_type}) for {video_id}: {err_msg}")
-                    if err_type == "FORMAT_ERROR":
-                        try:
-                            LOGGER(__name__).info(f"[YT-RETRY] Retrying Cookie #{idx} with mweb/web client fallback for {video_id}")
-                            ydl_opts_retry = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
-                            ydl_opts_retry["format"] = "bestaudio/best/ba/b"
-                            ydl_opts_retry["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
-                            ydl_opts_retry["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
-                            await loop.run_in_executor(
-                                None, lambda: yt_dlp.YoutubeDL(ydl_opts_retry).download([yt_link])
-                            )
-                        except Exception as re_err:
-                            LOGGER(__name__).debug(f"[YT-RETRY] Cookie #{idx} format retry failed for {video_id}: {re_err}")
-
+                        break  # Stop retrying with unusable cookie
+                    if err_cat == "FORMAT_ERROR":
+                        # Retry with relaxed format in next iteration or next mode
+                        pass
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
+                        AudioCache.set(video_id=video_id, local_path=downloaded, source="youtube")
                         return downloaded
-
-        # Step 3: No-Cookie yt-dlp
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp audio (no cookies) for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=False)
-            ydl_opts_nocookie.update({
-                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-            })
-            if get_ffmpeg_path():
-                ydl_opts_nocookie["postprocessors"] = [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ]
-            await loop.run_in_executor(
-                None, lambda: yt_dlp.YoutubeDL(ydl_opts_nocookie).download([yt_link])
-            )
-            downloaded = find_downloaded_file(video_id, is_video=False)
-            if downloaded:
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] No-cookie audio download successful for {video_id}")
-                return downloaded
-        except Exception as e:
-            LOGGER(__name__).warning(f"[YT-DOWNLOAD] No-cookie audio download failed for {video_id}: {e}")
-            downloaded = find_downloaded_file(video_id, is_video=False)
-            if downloaded:
-                return downloaded
-
-        # Step 4: Raw audio fallback without postprocessing across cookies and no-cookie
-        raw_candidates = get_valid_cookie_files() + [None]
-        for c_idx, raw_cookie in enumerate(raw_candidates, 1):
-            try:
-                c_lbl = os.path.basename(raw_cookie) if raw_cookie else "no-cookies"
-                LOGGER(__name__).info(f"[YT-DOWNLOAD] Raw audio fallback candidate #{c_idx} ({c_lbl}) for {video_id}")
-                ydl_opts_raw = get_ytdl_base_opts(cookie_file=raw_cookie, is_video=False)
-                ydl_opts_raw["format"] = "best/ba/b"
-                ydl_opts_raw["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "android", "ios"]}}
-                ydl_opts_raw["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
-                await loop.run_in_executor(
-                    None, lambda: yt_dlp.YoutubeDL(ydl_opts_raw).download([yt_link])
-                )
-                downloaded = find_downloaded_file(video_id, is_video=False)
-                if downloaded:
-                    return downloaded
-            except Exception as e:
-                LOGGER(__name__).error(f"[YT-DOWNLOAD] Raw audio fallback candidate #{c_idx} failed for {video_id}: {e}")
-                downloaded = find_downloaded_file(video_id, is_video=False)
-                if downloaded:
-                    return downloaded
 
         # Final Fallback: JioSaavn query retry
         LOGGER(__name__).info(f"[YT-DOWNLOAD] Triggering final JioSaavn search/download fallback for {video_id}")
-        js_res = await cls._try_jiosaavn_api(video_id, is_video=False)
+        title, _, dur_sec, _, _ = await YouTube.details(video_id, videoid=True)
+        js_res = await cls._try_jiosaavn_api(video_id, is_video=False, title=title, duration_sec=dur_sec)
         if js_res:
             return js_res
 
