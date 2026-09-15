@@ -2,35 +2,12 @@ import os
 from os import path
 import yt_dlp
 from SONALI_MUSIC import LOGGER
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path, is_bgutil_server_running
-
-
-def get_downloader_opts(cookie_file=None):
-    opts = {
-        "outtmpl": "downloads/%(id)s.%(ext)s",
-        "format": "bestaudio/bestvideo+bestaudio/best",
-        "quiet": True,
-        "noplaylist": True,
-        "no_warnings": True,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "socket_timeout": 20,
-        "retries": 5,
-        "fragment_retries": 5,
-        "extractor_retries": 3,
-        "ignoreerrors": True,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
-    }
-    if not is_bgutil_server_running():
-        opts["no_plugins"] = True
-    ff_path = get_ffmpeg_path()
-    if ff_path:
-        opts["ffmpeg_location"] = ff_path
-    if cookie_file:
-        opts["cookiefile"] = os.path.abspath(cookie_file)
-    return opts
+from SONALI_MUSIC.utils.youtube_utils import (
+    get_valid_cookie_files,
+    classify_ytdl_error,
+    get_ytdl_base_opts,
+    mark_cookie_unusable,
+)
 
 
 def find_downloaded_file_by_id(vid_id: str) -> str:
@@ -53,7 +30,7 @@ def download(url: str, my_hook=None) -> str:
 
     info = None
     for idx, cookie_file in enumerate(cookie_candidates, 1):
-        ytdl_opts = get_downloader_opts(cookie_file)
+        ytdl_opts = get_ytdl_base_opts(cookie_file=cookie_file)
         c_name = os.path.basename(cookie_file) if cookie_file else "no-cookies"
         try:
             ydl = yt_dlp.YoutubeDL(ytdl_opts)
@@ -63,6 +40,8 @@ def download(url: str, my_hook=None) -> str:
                 break
         except Exception as e:
             err_type, err_msg = classify_ytdl_error(e)
+            if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file)
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Downloader extract_info failed ({err_type}) with candidate #{idx} ({c_name}): {err_msg}")
 
     vid_id = info.get("id") if info else None
@@ -74,7 +53,8 @@ def download(url: str, my_hook=None) -> str:
     for idx, cookie_file in enumerate(cookie_candidates, 1):
         c_name = os.path.basename(cookie_file) if cookie_file else "no-cookies"
         try:
-            x_opts = get_downloader_opts(cookie_file)
+            x_opts = get_ytdl_base_opts(cookie_file=cookie_file)
+            x_opts["outtmpl"] = "downloads/%(id)s.%(ext)s"
             x = yt_dlp.YoutubeDL(x_opts)
             if my_hook:
                 x.add_progress_hook(my_hook)
@@ -85,6 +65,9 @@ def download(url: str, my_hook=None) -> str:
                     LOGGER(__name__).info(f"[YT-DOWNLOAD] Downloader download successful with candidate #{idx} ({c_name})")
                     return found
         except Exception as y_e:
+            err_type, _ = classify_ytdl_error(y_e)
+            if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file)
             LOGGER(__name__).error(f"[YT-DOWNLOAD] Downloader download error with candidate #{idx} ({c_name}): {y_e}")
             if vid_id:
                 found = find_downloaded_file_by_id(vid_id)

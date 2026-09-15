@@ -26,7 +26,7 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ffmpeg_path, is_bgutil_server_running
+from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ytdl_base_opts, mark_cookie_unusable
 
 # Command
 SONG_COMMAND = ["song"]
@@ -248,29 +248,7 @@ async def song_download_cb(client, CallbackQuery, _):
 
     x = None
     for cookie_file in cookie_candidates:
-        song_opts = {
-            "format": "bestaudio/bestvideo+bestaudio/best",
-            "quiet": True,
-            "noplaylist": True,
-            "no_warnings": True,
-            "nocheckcertificate": True,
-            "geo_bypass": True,
-            "socket_timeout": 20,
-            "retries": 5,
-            "fragment_retries": 5,
-            "extractor_retries": 3,
-            "ignoreerrors": True,
-            "js_runtimes": {"node": {}},
-            "remote_components": ["ejs:github"],
-            "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
-        }
-        if not is_bgutil_server_running():
-            song_opts["no_plugins"] = True
-        ff_path = get_ffmpeg_path()
-        if ff_path:
-            song_opts["ffmpeg_location"] = ff_path
-        if cookie_file:
-            song_opts["cookiefile"] = os.path.abspath(cookie_file)
+        song_opts = get_ytdl_base_opts(cookie_file=cookie_file)
         try:
             with yt_dlp.YoutubeDL(song_opts) as ytdl:
                 x = ytdl.extract_info(yturl, download=False)
@@ -278,6 +256,8 @@ async def song_download_cb(client, CallbackQuery, _):
                 break
         except Exception as e:
             err_type, err_msg = classify_ytdl_error(e)
+            if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file)
 
     if not x:
         return await mystic.edit_text("❌ This track couldn't be played right now. Try another song.")
