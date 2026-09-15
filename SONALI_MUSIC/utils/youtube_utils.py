@@ -89,7 +89,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
         else "bestaudio/bestaudio*/best/ba/b"
     )
 
-    player_clients = ["web", "mweb", "ios", "android"] if cookie_file else ["ios", "android", "mweb", "web"]
+    player_clients = ["mweb", "web", "ios", "android"] if cookie_file else ["ios", "android", "mweb", "web"]
 
     opts = {
         "format": format_selector,
@@ -206,12 +206,8 @@ def get_cookie_files() -> List[str]:
 
     project_paths = [
         "cookies/cookies.txt",
-        "cookies/cookie1.txt",
-        "cookies/cookie2.txt",
         "SONALI_MUSIC/assets/cookies.txt",
-        "SONALI_MUSIC/assets/cookie2.txt",
         "assets/cookies.txt",
-        "assets/cookie2.txt",
     ]
     candidates.extend(project_paths)
 
