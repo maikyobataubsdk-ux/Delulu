@@ -347,6 +347,19 @@ class YouTubeExtractor:
                     if err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
                         mark_cookie_unusable(cookie_file)
                     LOGGER(__name__).warning(f"[YT-AUTH] Cookie #{idx} failed ({err_type}) for {video_id}: {err_msg}")
+                    if err_type == "FORMAT_ERROR":
+                        try:
+                            LOGGER(__name__).info(f"[YT-RETRY] Retrying Cookie #{idx} with mweb/web client fallback for {video_id}")
+                            ydl_opts_retry = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
+                            ydl_opts_retry["format"] = "bestaudio/best/ba/b"
+                            ydl_opts_retry["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
+                            ydl_opts_retry["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
+                            await loop.run_in_executor(
+                                None, lambda: yt_dlp.YoutubeDL(ydl_opts_retry).download([yt_link])
+                            )
+                        except Exception as re_err:
+                            LOGGER(__name__).debug(f"[YT-RETRY] Cookie #{idx} format retry failed for {video_id}: {re_err}")
+
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
                         return downloaded
@@ -379,24 +392,27 @@ class YouTubeExtractor:
             if downloaded:
                 return downloaded
 
-        # Step 4: Raw audio fallback without postprocessing
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Raw audio fallback for {video_id}")
-            ydl_opts_raw = get_ytdl_base_opts(cookie_file=None, is_video=False)
-            ydl_opts_raw.update({
-                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-            })
-            await loop.run_in_executor(
-                None, lambda: yt_dlp.YoutubeDL(ydl_opts_raw).download([yt_link])
-            )
-            downloaded = find_downloaded_file(video_id, is_video=False)
-            if downloaded:
-                return downloaded
-        except Exception as e:
-            LOGGER(__name__).error(f"[YT-DOWNLOAD] Raw audio fallback failed for {video_id}: {e}")
-            downloaded = find_downloaded_file(video_id, is_video=False)
-            if downloaded:
-                return downloaded
+        # Step 4: Raw audio fallback without postprocessing across cookies and no-cookie
+        raw_candidates = get_valid_cookie_files() + [None]
+        for c_idx, raw_cookie in enumerate(raw_candidates, 1):
+            try:
+                c_lbl = os.path.basename(raw_cookie) if raw_cookie else "no-cookies"
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] Raw audio fallback candidate #{c_idx} ({c_lbl}) for {video_id}")
+                ydl_opts_raw = get_ytdl_base_opts(cookie_file=raw_cookie, is_video=False)
+                ydl_opts_raw["format"] = "best/ba/b"
+                ydl_opts_raw["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "android", "ios"]}}
+                ydl_opts_raw["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
+                await loop.run_in_executor(
+                    None, lambda: yt_dlp.YoutubeDL(ydl_opts_raw).download([yt_link])
+                )
+                downloaded = find_downloaded_file(video_id, is_video=False)
+                if downloaded:
+                    return downloaded
+            except Exception as e:
+                LOGGER(__name__).error(f"[YT-DOWNLOAD] Raw audio fallback candidate #{c_idx} failed for {video_id}: {e}")
+                downloaded = find_downloaded_file(video_id, is_video=False)
+                if downloaded:
+                    return downloaded
 
         LOGGER(__name__).critical(f"[YT-DOWNLOAD] All audio download pipelines failed for video_id: {video_id}")
         return None

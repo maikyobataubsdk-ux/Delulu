@@ -80,9 +80,16 @@ def get_yt_dlp_version() -> str:
 def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False) -> Dict[str, Any]:
     """
     Centralized yt-dlp configuration generator.
-    Uses dynamic audio format selection ('bestaudio/best') or video format selection.
+    Uses dynamic audio format selection or video format selection and adjusts player_client
+    based on cookie presence.
     """
-    format_selector = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" if is_video else "bestaudio/best"
+    format_selector = (
+        "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+        if is_video
+        else "bestaudio/bestaudio*/best/ba/b"
+    )
+
+    player_clients = ["web", "mweb", "ios", "android"] if cookie_file else ["ios", "android", "mweb", "web"]
 
     opts = {
         "format": format_selector,
@@ -98,7 +105,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
         "ignoreerrors": True,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web"]}},
+        "extractor_args": {"youtube": {"player_client": player_clients}},
     }
 
     if not is_bgutil_server_running():
