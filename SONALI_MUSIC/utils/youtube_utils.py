@@ -437,7 +437,9 @@ def analyze_cookies(cookie_path: Optional[str] = None, run_extraction_test: bool
                 if "# Netscape HTTP Cookie File" in line or "# HTTP Cookie File" in line:
                     has_netscape_header = True
                     continue
-                if line_str.startswith("#"):
+                if line_str.startswith("#HttpOnly_"):
+                    line_str = line_str[len("#HttpOnly_"):]
+                elif line_str.startswith("#"):
                     continue
 
                 parts = line_str.split("\t")
