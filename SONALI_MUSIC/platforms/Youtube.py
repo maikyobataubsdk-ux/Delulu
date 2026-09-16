@@ -242,53 +242,66 @@ class YouTubeExtractor:
 
     @staticmethod
     async def _try_cobalt_api(video_id: str, is_video: bool) -> Optional[str]:
-        if not SELF_HOSTED_COBALT_URL or not CircuitBreaker.is_available(SELF_HOSTED_COBALT_URL):
-            return None
+        cobalt_endpoints = []
+        if SELF_HOSTED_COBALT_URL:
+            cobalt_endpoints.append(SELF_HOSTED_COBALT_URL)
+        cobalt_endpoints.extend([
+            "https://api.cobalt.tools",
+            "https://cobalt-api.kwippy.com",
+            "https://cobalt.qtf.ai",
+        ])
+
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
         target_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        try:
-            LOGGER(__name__).info(f"[YT-API] Attempting Self-Hosted Cobalt API ({SELF_HOSTED_COBALT_URL}) for {video_id}")
-            headers = {
-                "User-Agent": "Mozilla/5.0",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-            payload = {
-                "url": target_url,
-                "downloadMode": "auto" if is_video else "audio",
-                "audioFormat": "mp3",
-            }
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.post(SELF_HOSTED_COBALT_URL, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        direct_url = data.get("url")
-                        if direct_url and await _save_stream_to_file(session, direct_url, dest_path):
-                            CircuitBreaker.record_success(SELF_HOSTED_COBALT_URL)
-                            LOGGER(__name__).info(f"[YT-API] Cobalt API successful for {video_id}")
-                            return dest_path
-                    else:
-                        CircuitBreaker.record_failure(SELF_HOSTED_COBALT_URL, status_code=resp.status)
-        except Exception as e:
-            err_cat, _ = classify_ytdl_error(e)
-            CircuitBreaker.record_failure(SELF_HOSTED_COBALT_URL, error_type=err_cat)
-            LOGGER(__name__).debug(f"[YT-API] Cobalt API instance failed for {video_id}: {e}")
-            if os.path.exists(dest_path):
-                try:
-                    os.remove(dest_path)
-                except Exception:
-                    pass
+        for endpoint in cobalt_endpoints:
+            if not CircuitBreaker.is_available(endpoint):
+                continue
+            try:
+                LOGGER(__name__).info(f"[YT-API] Attempting Cobalt API ({endpoint}) for {video_id}")
+                headers = {
+                    "User-Agent": "Mozilla/5.0",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
+                payload = {
+                    "url": target_url,
+                    "downloadMode": "auto" if is_video else "audio",
+                    "audioFormat": "mp3",
+                }
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    async with session.post(endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            direct_url = data.get("url")
+                            if direct_url and await _save_stream_to_file(session, direct_url, dest_path):
+                                CircuitBreaker.record_success(endpoint)
+                                LOGGER(__name__).info(f"[YT-API] Cobalt API successful for {video_id}")
+                                return dest_path
+                        else:
+                            CircuitBreaker.record_failure(endpoint, status_code=resp.status)
+            except Exception as e:
+                err_cat, _ = classify_ytdl_error(e)
+                CircuitBreaker.record_failure(endpoint, error_type=err_cat)
+                LOGGER(__name__).debug(f"[YT-API] Cobalt API instance ({endpoint}) failed for {video_id}: {e}")
+                if os.path.exists(dest_path):
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
         return None
 
     @staticmethod
     async def _try_invidious_piped_api(video_id: str, is_video: bool) -> Optional[str]:
         invidious_instances = [
-            f"https://inv.riverside.rocks/api/v1/videos/{video_id}",
             f"https://pipedapi.kavin.rocks/streams/{video_id}",
-            f"https://invidious.nerdvpn.de/api/v1/videos/{video_id}",
+            f"https://api.piped.video/streams/{video_id}",
             f"https://pipedapi.mha.fi/streams/{video_id}",
+            f"https://yewtu.be/api/v1/videos/{video_id}",
+            f"https://invidious.drgns.space/api/v1/videos/{video_id}",
+            f"https://inv.riverside.rocks/api/v1/videos/{video_id}",
+            f"https://invidious.nerdvpn.de/api/v1/videos/{video_id}",
         ]
         dest_ext = ".mp4" if is_video else ".mp3"
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")

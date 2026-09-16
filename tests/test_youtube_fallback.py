@@ -2,7 +2,14 @@ import os
 import pytest
 import asyncio
 from SONALI_MUSIC.platforms.Youtube import is_valid_media_file, extract_video_id, YouTubeExtractor
-from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
+from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn, clean_song_title
+
+
+def test_clean_song_title():
+    raw_title = "Ishq Official Lyrical I Amir Ameer | Faheem Abdullah | Rauhan Malik I Love Song 2024"
+    cleaned = clean_song_title(raw_title)
+    assert cleaned == "Ishq Amir Ameer Faheem Abdullah Rauhan Malik"
+    assert clean_song_title("Shape of You (Official Music Video) [HD]") == "Shape of You"
 
 
 def test_extract_video_id():
