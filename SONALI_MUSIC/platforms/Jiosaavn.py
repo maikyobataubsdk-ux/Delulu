@@ -21,15 +21,18 @@ SAAVN_API_ENDPOINTS = [
 def clean_song_title(title: str) -> str:
     """
     Cleans song title by removing common video tags like (Official Video),
-    [Lyrics], 4K, HD, Full Video, etc.
+    [Lyrics], 4K, HD, Full Video, pipes, year tags, etc.
     """
     if not title:
         return ""
     # Remove contents inside brackets/parentheses/braces
     cleaned = re.sub(r"[\(\[\{].*?[\)\]\}]", "", title)
     # Remove specific noise words/tags case-insensitively
-    noise_pattern = r"(?i)\b(official video|official lyric video|lyric video|lyrics|4k|hd|full video|audio|remix|feat|ft|video|vevo|teaser|trailer)\b"
-    cleaned = re.sub(noise_pattern, "", cleaned)
+    noise_pattern = r"(?i)\b(official lyric video|official video|lyric video|official|lyrical|lyrics|4k|hd|full video|audio|remix|feat|ft|video|vevo|teaser|trailer|love song|song|music video|full song|1080p|720p|\d{4})\b"
+    cleaned = re.sub(noise_pattern, " ", cleaned)
+    # Replace pipe, slash, backslash, hyphen or standalone 'I' delimiter with space
+    cleaned = re.sub(r"[|/\\–—]", " ", cleaned)
+    cleaned = re.sub(r"\s+I\s+", " ", cleaned)
     # Normalize extra whitespaces
     return " ".join(cleaned.split()).strip()
 
