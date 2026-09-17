@@ -3,6 +3,7 @@ import re
 import difflib
 import aiohttp
 from typing import Optional, Tuple, Dict, Any, List
+import config
 from SONALI_MUSIC import LOGGER
 
 DOWNLOAD_DIR = os.path.abspath("downloads")
@@ -11,11 +12,19 @@ DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain, */*",
 }
 
-SAAVN_API_ENDPOINTS = [
+RAW_SAAVN_ENDPOINTS = [
+    getattr(config, "SAAVN_API_URL", None),
+    getattr(config, "JIOSAAVN_API_URL", None),
+    "https://jiosaavn-a.kvinit6421.workers.dev/api/search/songs",
     "https://saavn.dev/api/search/songs",
     "https://jiosaavn-api-private-us.vercel.app/search/songs",
     "https://saavn.me/search/songs",
 ]
+
+SAAVN_API_ENDPOINTS = []
+for ep in RAW_SAAVN_ENDPOINTS:
+    if ep and ep not in SAAVN_API_ENDPOINTS:
+        SAAVN_API_ENDPOINTS.append(ep)
 
 
 def clean_song_title(title: str) -> str:
@@ -47,7 +56,12 @@ class JioSaavnAPI:
     """Helper API class for JioSaavn audio search and direct stream downloading."""
 
     @staticmethod
-    async def search_song(query: str, target_title: Optional[str] = None, target_artist: Optional[str] = None, target_duration: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    async def search_song(
+        query: str,
+        target_title: Optional[str] = None,
+        target_artist: Optional[str] = None,
+        target_duration: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         clean_q = clean_song_title(query) or query
         if not clean_q:
             return None
@@ -55,24 +69,30 @@ class JioSaavnAPI:
         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
             for endpoint in SAAVN_API_ENDPOINTS:
                 try:
-                    params = {"query": clean_q, "limit": 5}
+                    params = {"query": clean_q, "limit": 10}
                     async with session.get(endpoint, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
-                            results = data.get("data", {}).get("results", []) if isinstance(data.get("data"), dict) else data.get("data", [])
+                            results = (
+                                data.get("data", {}).get("results", [])
+                                if isinstance(data.get("data"), dict)
+                                else data.get("data", [])
+                            )
                             if not results and isinstance(data, list):
                                 results = data
 
-                            if not results:
+                            if not results or not isinstance(results, list):
                                 continue
 
                             candidates = []
                             target_title_clean = clean_song_title(target_title or query)
 
                             for song in results:
-                                title = song.get("name") or song.get("title") or ""
-                                song_id = song.get("id", "saavn_track")
-                                duration = song.get("duration") or 0
+                                if not isinstance(song, dict):
+                                    continue
+                                title = song.get("name") or song.get("title") or song.get("song") or ""
+                                song_id = song.get("id") or song.get("song_id") or "saavn_track"
+                                duration = song.get("duration") or song.get("duration_sec") or 0
                                 try:
                                     duration_sec = int(duration)
                                 except Exception:
@@ -82,14 +102,48 @@ class JioSaavnAPI:
                                 if isinstance(song.get("primaryArtists"), str):
                                     primary_artists = song.get("primaryArtists")
                                 elif isinstance(song.get("artists"), dict):
-                                    primary_artists = song.get("artists", {}).get("primary", [{}])[0].get("name", "")
+                                    primary_list = song.get("artists", {}).get("primary", [])
+                                    if isinstance(primary_list, list):
+                                        names = [a.get("name") for a in primary_list if isinstance(a, dict) and a.get("name")]
+                                        primary_artists = ", ".join(names)
+                                elif isinstance(song.get("artists"), str):
+                                    primary_artists = song.get("artists")
 
-                                # Download URLs
-                                download_urls = song.get("downloadUrl") or []
+                                # Download URLs extraction
+                                download_urls = (
+                                    song.get("downloadUrl")
+                                    or song.get("download_url")
+                                    or song.get("media_url")
+                                    or song.get("media_urls")
+                                    or song.get("vlink")
+                                    or song.get("url")
+                                    or []
+                                )
                                 stream_url = None
                                 if isinstance(download_urls, list) and download_urls:
-                                    stream_url = download_urls[-1].get("url") or download_urls[-1].get("link")
-                                elif isinstance(download_urls, str):
+                                    quality_map = {}
+                                    for item in download_urls:
+                                        if isinstance(item, dict):
+                                            q = str(item.get("quality", "")).lower()
+                                            u = item.get("url") or item.get("link")
+                                            if u:
+                                                quality_map[q] = u
+                                        elif isinstance(item, str) and item.startswith("http"):
+                                            stream_url = item
+                                    if not stream_url and quality_map:
+                                        for q_key in ["320kbps", "160kbps", "96kbps", "48kbps", "12kbps"]:
+                                            if q_key in quality_map:
+                                                stream_url = quality_map[q_key]
+                                                break
+                                        if not stream_url:
+                                            stream_url = list(quality_map.values())[-1]
+                                    elif not stream_url and isinstance(download_urls[-1], dict):
+                                        stream_url = download_urls[-1].get("url") or download_urls[-1].get("link")
+                                    elif not stream_url and isinstance(download_urls[-1], str):
+                                        stream_url = download_urls[-1]
+                                elif isinstance(download_urls, dict):
+                                    stream_url = download_urls.get("320kbps") or download_urls.get("160kbps") or download_urls.get("url") or download_urls.get("link")
+                                elif isinstance(download_urls, str) and download_urls.startswith("http"):
                                     stream_url = download_urls
 
                                 if not stream_url:
@@ -106,8 +160,6 @@ class JioSaavnAPI:
                                 dur_diff = 0
                                 if target_duration and target_duration > 0 and duration_sec > 0:
                                     dur_diff = abs(target_duration - duration_sec)
-                                else:
-                                    dur_diff = 0
 
                                 candidates.append({
                                     "song": song,
@@ -123,7 +175,7 @@ class JioSaavnAPI:
                             if not candidates:
                                 continue
 
-                            # Sort candidates by title similarity, artist similarity, and duration difference (< 15 sec preference)
+                            # Sort candidates by title similarity, artist similarity, and duration difference
                             def score_candidate(c):
                                 dur_penalty = 0.0
                                 if target_duration and target_duration > 0:
@@ -134,7 +186,6 @@ class JioSaavnAPI:
                             candidates.sort(key=score_candidate, reverse=True)
                             best = candidates[0]
 
-                            # Accept best candidate
                             song = best["song"]
                             title = best["title"]
                             song_id = best["song_id"]
@@ -142,11 +193,30 @@ class JioSaavnAPI:
                             stream_url = best["stream_url"]
                             duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}" if duration_sec else "3:30"
 
-                            image_list = song.get("image") or []
+                            image_list = song.get("image") or song.get("images") or []
                             thumb = "https://graph.org/file/4fb9a698630aa5b47be05-060979d72b7752fc8f.jpg"
                             if isinstance(image_list, list) and image_list:
-                                thumb = image_list[-1].get("url") or image_list[-1].get("link") or thumb
-                            elif isinstance(image_list, str):
+                                quality_map = {}
+                                for item in image_list:
+                                    if isinstance(item, dict):
+                                        q = str(item.get("quality", "")).lower()
+                                        u = item.get("url") or item.get("link")
+                                        if u:
+                                            quality_map[q] = u
+                                    elif isinstance(item, str) and item.startswith("http"):
+                                        thumb = item
+                                if quality_map:
+                                    for q_key in ["500x500", "150x150", "50x50"]:
+                                        if q_key in quality_map:
+                                            thumb = quality_map[q_key]
+                                            break
+                                    if thumb == "https://graph.org/file/4fb9a698630aa5b47be05-060979d72b7752fc8f.jpg":
+                                        thumb = list(quality_map.values())[-1]
+                                elif isinstance(image_list[-1], dict):
+                                    thumb = image_list[-1].get("url") or image_list[-1].get("link") or thumb
+                                elif isinstance(image_list[-1], str):
+                                    thumb = image_list[-1]
+                            elif isinstance(image_list, str) and image_list.startswith("http"):
                                 thumb = image_list
 
                             LOGGER(__name__).info(f"[JIOSAAVN] Matched track on JioSaavn: {title} ({song_id}) [TitleSim: {best['title_sim']:.2f}, DurDiff: {best['dur_diff']}s]")
