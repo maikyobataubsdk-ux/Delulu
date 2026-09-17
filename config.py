@@ -23,6 +23,8 @@ UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/spicycodez/DeluluMus
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 GIT_TOKEN = getenv("GIT_TOKEN", None)
 
+SAAVN_API_URL = getenv("SAAVN_API_URL", "https://jiosaavn-a.kvinit6421.workers.dev/api/search/songs")
+JIOSAAVN_API_URL = getenv("JIOSAAVN_API_URL", "https://jiosaavn-a.kvinit6421.workers.dev/api/search/songs")
 API_URL = getenv("API_URL", 'https://pytdbotapi.thequickearn.xyz')
 VIDEO_API_URL = getenv("VIDEO_API_URL", 'https://api.video.thequickearn.xyz')
 SHRUTI_API_URL = getenv("SHRUTI_API_URL", 'https://api.shrutibots.site')

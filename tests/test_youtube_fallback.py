@@ -1,8 +1,9 @@
 import os
 import pytest
 import asyncio
+import config
 from SONALI_MUSIC.platforms.Youtube import is_valid_media_file, extract_video_id, YouTubeExtractor
-from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn, clean_song_title
+from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn, clean_song_title, SAAVN_API_ENDPOINTS
 
 
 def test_clean_song_title():
@@ -39,6 +40,15 @@ def test_is_valid_media_file(tmp_path):
     assert is_valid_media_file(str(valid_file))
 
 
+def test_saavn_api_endpoints():
+    assert "https://jiosaavn-a.kvinit6421.workers.dev/api/search/songs" in SAAVN_API_ENDPOINTS
+    assert SAAVN_API_ENDPOINTS[0] in [
+        getattr(config, "SAAVN_API_URL", None),
+        getattr(config, "JIOSAAVN_API_URL", None),
+        "https://jiosaavn-a.kvinit6421.workers.dev/api/search/songs",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_jiosaavn_search():
     res = await JioSaavn.search_song("Tum Hi Ho")
@@ -47,3 +57,4 @@ async def test_jiosaavn_search():
         assert "title" in res
         assert "stream_url" in res
         assert "duration_min" in res
+        assert res["stream_url"].startswith("http")
