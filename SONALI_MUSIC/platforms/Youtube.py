@@ -47,6 +47,7 @@ DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 }
+_JIOSAAVN_CACHE: Dict[str, str] = {}
 
 
 def extract_video_id(link: str) -> str:
@@ -136,24 +137,27 @@ class YouTubeExtractor:
     async def _try_jiosaavn_api(video_id: str, is_video: bool, title: str = "", artist: str = "", duration_sec: int = 0) -> Optional[str]:
         if is_video:
             return None
-        dest_ext = ".mp3"
-        dest_filename = f"{video_id}{dest_ext}"
+        if video_id in _JIOSAAVN_CACHE:
+            LOGGER(__name__).info(f"[YT-API] Found cached JioSaavn direct stream URL for {video_id}")
+            return _JIOSAAVN_CACHE[video_id]
+
         search_query = clean_song_title(title) if title else video_id
         if not search_query or search_query == video_id:
             LOGGER(__name__).warning(f"[YT-API] JioSaavn fallback skipped for {video_id}: No clean metadata/title available")
             return None
         try:
-            LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio fallback for '{search_query}' ({video_id})")
-            res_path = await JioSaavn.download_song_by_query(
+            LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio search for '{search_query}' ({video_id})")
+            song_info = await JioSaavn.search_song(
                 query=search_query,
-                dest_filename=dest_filename,
                 target_title=title,
                 target_artist=artist,
                 target_duration=duration_sec,
             )
-            if res_path and is_valid_media_file(res_path):
-                LOGGER(__name__).info(f"[YT-API] JioSaavn audio download successful for {video_id}")
-                return res_path
+            if song_info and song_info.get("stream_url"):
+                stream_url = song_info["stream_url"]
+                _JIOSAAVN_CACHE[video_id] = stream_url
+                LOGGER(__name__).info(f"[YT-API] JioSaavn direct stream URL obtained for {video_id}: {stream_url}")
+                return stream_url
         except Exception as e:
             LOGGER(__name__).warning(f"[YT-API] JioSaavn API failed for {video_id}: {e}")
         return None
@@ -352,6 +356,12 @@ class YouTubeExtractor:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Using cached media file for video_id: {video_id}")
             return existing_file
 
+        # Step 0: Check JioSaavn Cache
+        if video_id in _JIOSAAVN_CACHE:
+            stream_url = _JIOSAAVN_CACHE[video_id]
+            LOGGER(__name__).info(f"[JIOSAAVN-PLAY] Using cached direct JioSaavn stream URL for {video_id}: {stream_url}")
+            return stream_url
+
         # Step 1: External API System (Sequential Multi-Source Fallback Pipeline)
         api_providers = [
             cls._try_jiosaavn_api,
@@ -364,7 +374,7 @@ class YouTubeExtractor:
         for provider in api_providers:
             try:
                 res_path = await provider(video_id, is_video=False)
-                if res_path and is_valid_media_file(res_path):
+                if res_path and (res_path.startswith("http://") or res_path.startswith("https://") or is_valid_media_file(res_path)):
                     return res_path
             except Exception as e:
                 LOGGER(__name__).debug(f"[YT-API] API provider error: {e}")
@@ -540,24 +550,29 @@ class YouTubeAPI:
         return "Unknown Title", f"https://img.youtube.com/vi/{vidid}/hqdefault.jpg"
 
     async def _jiosaavn_extract_track_info(self, query: str) -> Optional[Tuple[Dict[str, Any], str]]:
+        if "youtube.com" in query or "youtu.be" in query:
+            return None
         try:
             info = await JioSaavn.search_song(query)
-            if info:
+            if info and info.get("stream_url"):
                 title = info.get("title", query)
-                song_id = info.get("id", "saavn_track")
+                song_id = info.get("id") or "saavn_track"
                 duration_min = info.get("duration_min", "3:30")
                 thumb = info.get("thumb", "https://graph.org/file/4fb9a698630aa5b47be05-060979d72b7752fc8f.jpg")
+                stream_url = info.get("stream_url")
                 track_details = {
                     "title": title,
                     "link": f"https://www.youtube.com/watch?v={song_id}",
                     "vidid": song_id,
                     "duration_min": duration_min,
                     "thumb": thumb,
+                    "stream_url": stream_url,
                 }
-                LOGGER(__name__).info(f"[YT-FALLBACK] JioSaavn track fallback successful: {title} ({song_id})")
+                _JIOSAAVN_CACHE[song_id] = stream_url
+                LOGGER(__name__).info(f"[JIOSAAVN-SEARCH] Track resolved via JioSaavn API: {title} ({song_id}) -> {stream_url}")
                 return track_details, song_id
         except Exception as e:
-            LOGGER(__name__).warning(f"[YT-FALLBACK] JioSaavn track extraction failed: {e}")
+            LOGGER(__name__).warning(f"[JIOSAAVN-SEARCH] JioSaavn track extraction failed: {e}")
         return None
 
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
@@ -634,7 +649,15 @@ class YouTubeAPI:
 
         vidid = extract_video_id(link)
 
-        # Primary Multi-Result Search: VideosSearch
+        # Primary Search Option: JioSaavn Search API for audio track resolution
+        if not ("youtube.com" in link or "youtu.be" in link):
+            js_res = await self._jiosaavn_extract_track_info(link)
+            if js_res:
+                details_dict, v_id = js_res
+                duration_sec = time_to_seconds(details_dict["duration_min"])
+                return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
+
+        # Fallback Multi-Result Search: VideosSearch
         if VideosSearch is not None and not ("youtube.com" in link or "youtu.be" in link):
             try:
                 LOGGER(__name__).info(f"[YT-SEARCH] Searching multiple results via VideosSearch for: {link}")
@@ -729,7 +752,13 @@ class YouTubeAPI:
 
         vidid = extract_video_id(link)
 
-        # Multi-result search via VideosSearch if it's a search term
+        # Priority 1: JioSaavn Search API for direct song resolution
+        if not ("youtube.com" in link or "youtu.be" in link):
+            js_res = await self._jiosaavn_extract_track_info(link)
+            if js_res:
+                return js_res
+
+        # Priority 2: Multi-result search via VideosSearch if it's a search term
         if VideosSearch is not None and not ("youtube.com" in link or "youtu.be" in link):
             try:
                 LOGGER(__name__).info(f"[YT-SEARCH] Multi-result track search for: '{link}'")
