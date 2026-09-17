@@ -200,13 +200,37 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await Sona.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=status,
-                image=thumbnail,
-            )
+            try:
+                await Sona.join_call(
+                    chat_id,
+                    original_chat_id,
+                    file_path,
+                    video=status,
+                    image=thumbnail,
+                )
+            except Exception as join_err:
+                if direct and isinstance(file_path, str) and file_path.startswith("http"):
+                    LOGGER(__name__).warning(f"[STREAM-FALLBACK] Sona.join_call failed for direct URL {file_path}: {join_err}. Retrying with YouTube download fallback.")
+                    yt_file = await YouTube.download(vidid, mystic, video=status, videoid=True)
+                    if isinstance(yt_file, tuple):
+                        yt_path, yt_direct = yt_file
+                    else:
+                        yt_path, yt_direct = yt_file, False
+                    if yt_path:
+                        file_path = yt_path
+                        direct = yt_direct
+                        await Sona.join_call(
+                            chat_id,
+                            original_chat_id,
+                            file_path,
+                            video=status,
+                            image=thumbnail,
+                        )
+                    else:
+                        raise join_err
+                else:
+                    raise join_err
+
             await put_queue(
                 chat_id,
                 original_chat_id,

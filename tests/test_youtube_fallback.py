@@ -58,3 +58,22 @@ async def test_jiosaavn_search():
         assert "stream_url" in res
         assert "duration_min" in res
         assert res["stream_url"].startswith("http")
+
+
+@pytest.mark.asyncio
+async def test_youtube_jiosaavn_pipeline():
+    from SONALI_MUSIC import YouTube
+    from SONALI_MUSIC.platforms.Youtube import _JIOSAAVN_CACHE
+
+    track_details, track_id = await YouTube.track("Tum Hi Ho")
+    assert track_details is not None
+    assert "title" in track_details
+    assert track_id is not None
+
+    if track_id in _JIOSAAVN_CACHE:
+        assert _JIOSAAVN_CACHE[track_id].startswith("http")
+        dl_res = await YouTube.download(track_id, None)
+        assert dl_res is not None
+        stream_url, direct = dl_res
+        assert direct is True
+        assert stream_url.startswith("http")
