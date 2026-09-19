@@ -1,4 +1,5 @@
 import time, re
+import config
 from config import BOT_USERNAME
 from pyrogram.enums import MessageEntityType
 from pyrogram import filters
@@ -11,7 +12,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 NEXIO = [
         [
-            InlineKeyboardButton(text="• ᴀᴧᴅᴅ ϻᴇ ʙᴧʙʏ •", url=f"https://t.me/MAHI_MUSICSBOT?startgroup=true"),
+            InlineKeyboardButton(text="• ᴀᴧᴅᴅ ϻᴇ ʙᴧʙʏ •", url=f"https://t.me/{BOT_USERNAME}?startgroup=true"),
         ],
         ]
 

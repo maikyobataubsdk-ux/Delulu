@@ -7,6 +7,7 @@ from pyrogram import *
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.enums import *
 
+import config
 #BOT FILE NAME
 from SONALI_MUSIC import app as app
 from SONALI_MUSIC.mongo.couples_db import _get_image, get_couple
@@ -15,7 +16,7 @@ POLICE = [
     [
         InlineKeyboardButton(
             text="• ᴀᴅᴅ ᴍᴇ ʙᴀʙʏ •",
-            url=f"https://t.me/MAHI_MUSICSBOT?startgroup=true",
+            url=f"https://t.me/{config.BOT_USERNAME}?startgroup=true",
         ),
     ],
 ]

@@ -101,7 +101,7 @@ class BUTTONS(object):
         ]
     PBUTTON = [
         [
-            InlineKeyboardButton("ㅤ- 𝑨𝑳𝑶𝑵𝑬 ! ", url="https://t.me/II_ALONE_BOY_Il")
+            InlineKeyboardButton("ㅤ- 𝑨𝑳𝑶𝑵𝑬 ! ", url=config.SUPPORT_CHAT if config.SUPPORT_CHAT else f"https://t.me/{config.OWNER_USERNAME}")
         ],
         [
             InlineKeyboardButton("⌯ ʙᴧᴄᴋ ⌯", callback_data="MAIN_CP"),
@@ -111,8 +111,8 @@ class BUTTONS(object):
     
     ABUTTON = [
         [
-            InlineKeyboardButton("⌯ sυᴘᴘσʀᴛ ⌯", url="https://t.me/Il_ALONE_BOY_II"),
-            InlineKeyboardButton("⌯ υᴘᴅᴧᴛєs ⌯", url="https://t.me/II_MUSIC_BOT_UPDATE_II"),
+            InlineKeyboardButton("⌯ sυᴘᴘσʀᴛ ⌯", url=config.SUPPORT_CHAT),
+            InlineKeyboardButton("⌯ υᴘᴅᴧᴛєs ⌯", url=config.SUPPORT_CHANNEL),
         ],
         [
             InlineKeyboardButton("⌯ ʙᴧᴄᴋ ⌯", callback_data="settingsback_helper"),
