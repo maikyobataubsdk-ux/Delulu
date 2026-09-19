@@ -13,7 +13,7 @@ async def github(_, message):
         return
 
     username = message.text.split(None, 1)[1]
-    URL = f'https://t.me/MAHI_MUSICSBOT'
+    URL = f'https://api.github.com/users/{username}'
 
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as request:

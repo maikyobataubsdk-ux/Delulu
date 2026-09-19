@@ -1,19 +1,19 @@
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from SONALI_MUSIC import app
+import config
 from config import BOT_USERNAME
 from SONALI_MUSIC.utils.errors import capture_err
 import httpx 
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-start_txt = """**
+start_txt = f"""**
 <u>❃ ᴡєʟᴄσϻє ᴛᴏ sᴘɪᴄʏ ɴєᴛᴡσʀᴋ ʀєᴘσs ❃</u>
  
 ✼ ʀєᴘᴏ ɪs ηᴏᴡ ᴘʀɪᴠᴧᴛє ᴅᴜᴅє 😌
  
 ❉  ʏᴏᴜ ᴄᴧη мʏ ᴜsє ᴘᴜʙʟɪᴄ ʀєᴘσs !!  
 
-✼ || [˹  ɴᴇᴛᴡᴏʀᴋ˼ 💞](https://t.me/II_MUSIC_BOT_UPDATE_II) ||
+✼ || [˹  ɴᴇᴛᴡᴏʀᴋ˼ 💞]({config.SUPPORT_CHANNEL}) ||
  
 ❊ ʀᴜη 24x7 ʟᴧɢ ϝʀєє ᴡɪᴛʜσᴜᴛ sᴛσᴘ**
 """
@@ -28,18 +28,18 @@ async def start(_, msg):
           InlineKeyboardButton("✙ ᴧᴅᴅ ϻє вᴧʙʏ ✙", url=f"https://t.me/{BOT_USERNAME}?startgroup=true")
         ],
         [
-          InlineKeyboardButton("• ɴєᴛᴡᴏʀᴋ •", url="https://t.me/II_MUSIC_BOT_UPDATE_II"),
-          InlineKeyboardButton("• 𝛅ᴜᴘᴘσʀᴛ •", url="https://t.me/II_ALONE_BOY_Il"),
+          InlineKeyboardButton("• ɴєᴛᴡᴏʀᴋ •", url=config.SUPPORT_CHANNEL),
+          InlineKeyboardButton("• 𝛅ᴜᴘᴘσʀᴛ •", url=config.SUPPORT_CHAT),
           ],
 [
-InlineKeyboardButton("• ᴧʟʟ ʙσᴛѕ •", url=f"https://t.me/II_MUSIC_BOT_UPDATE_II"),
+InlineKeyboardButton("• ᴧʟʟ ʙσᴛѕ •", url=config.SUPPORT_CHANNEL),
 
         ]]
     
     reply_markup = InlineKeyboardMarkup(buttons)
     
     await msg.reply_photo(
-        photo="https://litter.catbox.moe/xr9jf82b2umeke7j.jpg",
+        photo=config.START_IMG_URL,
         caption=start_txt,
         reply_markup=reply_markup
     )
