@@ -231,16 +231,16 @@ def get_yt_dlp_version() -> str:
 def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False) -> Dict[str, Any]:
     """
     Centralized yt-dlp configuration generator.
-    Uses relaxed audio format selector with 'best' as final fallback.
+    Uses relaxed audio format selector 'bestaudio/best/ba/b' with format_sort.
     Supports bgutil PO token provider via extractor_args.
     """
     format_selector = (
         "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         if is_video
-        else "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
+        else "bestaudio/best/ba/b"
     )
 
-    player_clients = ["mweb", "web", "ios", "android"] if cookie_file else ["mweb", "ios", "android", "web"]
+    player_clients = ["ios", "tvhtml5"] if not cookie_file else ["mweb", "web", "ios", "android"]
 
     yt_extractor_args: Dict[str, Any] = {"player_client": player_clients}
 
@@ -250,6 +250,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
 
     opts = {
         "format": format_selector,
+        "format_sort": ["res", "ext:m4a:m4a", "acodec"],
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,

@@ -386,12 +386,15 @@ class YouTubeExtractor:
         primary_cookie = valid_cookie_files[0] if valid_cookie_files else None
 
         modes = [
-            ("mweb_pot_nocookies", ["mweb"], None, True),
-            ("default_pot_nocookies", ["mweb", "ios", "android", "web"], None, True),
-            ("mweb_cookies", ["mweb"], primary_cookie, False),
-            ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
-            ("web_safari_emergency", ["web_safari", "mweb", "web"], primary_cookie, False),
+            ("profile1_ios_tvhtml5", ["ios", "tvhtml5"], None, True),
+            ("profile2_android_mweb", ["android", "mweb"], None, True),
+            ("profile3_web", ["web"], None, True),
         ]
+        if primary_cookie and is_cookie_usable(primary_cookie):
+            modes.extend([
+                ("mweb_cookies", ["mweb"], primary_cookie, False),
+                ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
+            ])
 
         for mode_name, clients, cookie_file, use_pot in modes:
             for retry in range(1, 3):

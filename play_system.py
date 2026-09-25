@@ -64,7 +64,8 @@ async def _check_stream_url(url: str) -> bool:
 def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[str, Any]]:
     """Synchronous yt-dlp extraction with specified player_client profile."""
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio/best/ba/b",
+        "format_sort": ["res", "ext:m4a:m4a", "acodec"],
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -86,6 +87,32 @@ def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[s
                 info = info["entries"][0]
 
             stream_url = info.get("url")
+
+            # Safe format extractor fallback (manual format parsing)
+            if not stream_url and "formats" in info and isinstance(info["formats"], list):
+                formats = info["formats"]
+                # Primary: Select the first format where acodec != 'none' and vcodec == 'none'
+                for fmt in formats:
+                    if not isinstance(fmt, dict):
+                        continue
+                    acodec = fmt.get("acodec")
+                    vcodec = fmt.get("vcodec")
+                    if acodec and acodec != "none" and (not vcodec or vcodec == "none"):
+                        if fmt.get("url"):
+                            stream_url = fmt["url"]
+                            break
+
+                # Secondary: If no audio-only stream is found, pick best stream containing audio (acodec != 'none')
+                if not stream_url:
+                    for fmt in reversed(formats):
+                        if not isinstance(fmt, dict):
+                            continue
+                        acodec = fmt.get("acodec")
+                        if acodec and acodec != "none":
+                            if fmt.get("url"):
+                                stream_url = fmt["url"]
+                                break
+
             title = info.get("title", "Unknown Track")
             duration_sec = info.get("duration", 0)
             duration_str = _format_duration(duration_sec) if isinstance(duration_sec, int) else "0:00"
