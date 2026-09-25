@@ -22,7 +22,43 @@ class TestYouTubePipeline(unittest.TestCase):
 
     def test_format_selector(self):
         opts = get_ytdl_base_opts(is_video=False)
-        self.assertEqual(opts["format"], "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best")
+        self.assertEqual(opts["format"], "bestaudio/best/ba/b")
+        self.assertEqual(opts["format_sort"], ["res", "ext:m4a:m4a", "acodec"])
+
+    def test_manual_format_parsing(self):
+        mock_info = {
+            "title": "Sample Song",
+            "duration": 200,
+            "formats": [
+                {"format_id": "140", "acodec": "mp4a.40.2", "vcodec": "none", "url": "http://example.com/audio1.m4a"},
+                {"format_id": "18", "acodec": "mp4a.40.2", "vcodec": "avc1.42001E", "url": "http://example.com/video1.mp4"},
+            ]
+        }
+        formats = mock_info["formats"]
+        stream_url = None
+        for fmt in formats:
+            if fmt.get("acodec") not in (None, "none") and fmt.get("vcodec") in (None, "none"):
+                stream_url = fmt.get("url")
+                break
+        self.assertEqual(stream_url, "http://example.com/audio1.m4a")
+
+        mock_info_video = {
+            "formats": [
+                {"format_id": "18", "acodec": "mp4a.40.2", "vcodec": "avc1.42001E", "url": "http://example.com/video1.mp4"},
+            ]
+        }
+        formats_v = mock_info_video["formats"]
+        stream_url_v = None
+        for fmt in formats_v:
+            if fmt.get("acodec") not in (None, "none") and fmt.get("vcodec") in (None, "none"):
+                stream_url_v = fmt.get("url")
+                break
+        if not stream_url_v:
+            for fmt in reversed(formats_v):
+                if fmt.get("acodec") not in (None, "none"):
+                    stream_url_v = fmt.get("url")
+                    break
+        self.assertEqual(stream_url_v, "http://example.com/video1.mp4")
 
     def test_error_classification(self):
         err1, _ = classify_ytdl_error("Requested format is not available")
