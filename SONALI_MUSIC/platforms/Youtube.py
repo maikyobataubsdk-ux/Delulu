@@ -356,45 +356,15 @@ class YouTubeExtractor:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Using cached media file for video_id: {video_id}")
             return existing_file
 
-        # Step 0: Check JioSaavn Cache
-        if video_id in _JIOSAAVN_CACHE:
-            stream_url = _JIOSAAVN_CACHE[video_id]
-            LOGGER(__name__).info(f"[JIOSAAVN-PLAY] Using cached direct JioSaavn stream URL for {video_id}: {stream_url}")
-            return stream_url
-
-        # Step 1: External API System (Sequential Multi-Source Fallback Pipeline)
-        api_providers = [
-            cls._try_jiosaavn_api,
-            cls._try_shruti_api,
-            cls._try_pytdbot_api,
-            cls._try_cobalt_api,
-            cls._try_invidious_piped_api,
-        ]
-
-        for provider in api_providers:
-            try:
-                res_path = await provider(video_id, is_video=False)
-                if res_path and (res_path.startswith("http://") or res_path.startswith("https://") or is_valid_media_file(res_path)):
-                    return res_path
-            except Exception as e:
-                LOGGER(__name__).debug(f"[YT-API] API provider error: {e}")
-
-        # Step 2: Multi-Method Local yt-dlp Sequential Download Pipeline
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
         loop = asyncio.get_event_loop()
-        valid_cookie_files = get_valid_cookie_files()
-        primary_cookie = valid_cookie_files[0] if valid_cookie_files else None
 
+        # Step 1: Local yt-dlp Sequential Client Spoofing Pipeline (No Cookies required)
         modes = [
             ("profile1_ios_tvhtml5", ["ios", "tvhtml5"], None, True),
             ("profile2_android_mweb", ["android", "mweb"], None, True),
             ("profile3_web", ["web"], None, True),
         ]
-        if primary_cookie and is_cookie_usable(primary_cookie):
-            modes.extend([
-                ("mweb_cookies", ["mweb"], primary_cookie, False),
-                ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
-            ])
 
         for mode_name, clients, cookie_file, use_pot in modes:
             for retry in range(1, 3):
@@ -419,19 +389,63 @@ class YouTubeExtractor:
                 except Exception as e:
                     err_cat, err_msg = classify_ytdl_error(e)
                     LOGGER(__name__).warning(f"[YT-PIPELINE] Mode '{mode_name}' attempt {retry} failed ({err_cat}): {err_msg}")
-                    if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
-                        mark_cookie_unusable(cookie_file)
-                        break  # Stop retrying with unusable cookie
-                    if err_cat == "FORMAT_ERROR":
-                        # Retry with relaxed format in next iteration or next mode
-                        pass
                     downloaded = find_downloaded_file(video_id, is_video=False)
                     if downloaded:
                         AudioCache.set(video_id=video_id, local_path=downloaded, source="youtube")
                         return downloaded
 
-        # Final Fallback: JioSaavn query retry
-        LOGGER(__name__).info(f"[YT-DOWNLOAD] Triggering final JioSaavn search/download fallback for {video_id}")
+        # Step 2: External YouTube API Downloaders
+        yt_api_providers = [
+            cls._try_shruti_api,
+            cls._try_pytdbot_api,
+            cls._try_cobalt_api,
+            cls._try_invidious_piped_api,
+        ]
+
+        for provider in yt_api_providers:
+            try:
+                res_path = await provider(video_id, is_video=False)
+                if res_path and (res_path.startswith("http://") or res_path.startswith("https://") or is_valid_media_file(res_path)):
+                    return res_path
+            except Exception as e:
+                LOGGER(__name__).debug(f"[YT-API] API provider error: {e}")
+
+        # Step 3: Cookie-backed yt-dlp fallback (if usable cookies exist)
+        valid_cookie_files = get_valid_cookie_files()
+        primary_cookie = valid_cookie_files[0] if valid_cookie_files else None
+        if primary_cookie and is_cookie_usable(primary_cookie):
+            cookie_modes = [
+                ("mweb_cookies", ["mweb"], primary_cookie, False),
+                ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
+            ]
+            for mode_name, clients, cookie_file, use_pot in cookie_modes:
+                try:
+                    c_label = os.path.basename(cookie_file)
+                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying cookie mode '{mode_name}' (cookie={c_label}) for {video_id}")
+                    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
+                    ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
+                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
+
+                    await loop.run_in_executor(
+                        None, lambda opts=ydl_opts: yt_dlp.YoutubeDL(opts).download([yt_link])
+                    )
+                    downloaded = find_downloaded_file(video_id, is_video=False)
+                    if downloaded:
+                        AudioCache.set(video_id=video_id, local_path=downloaded, source="youtube")
+                        return downloaded
+                except Exception as e:
+                    err_cat, err_msg = classify_ytdl_error(e)
+                    if err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+                        mark_cookie_unusable(cookie_file)
+                        break
+
+        # Step 4: JioSaavn Cache / API Fallback
+        if video_id in _JIOSAAVN_CACHE:
+            stream_url = _JIOSAAVN_CACHE[video_id]
+            LOGGER(__name__).info(f"[JIOSAAVN-PLAY] Using cached direct JioSaavn stream URL for {video_id}: {stream_url}")
+            return stream_url
+
+        LOGGER(__name__).info(f"[YT-DOWNLOAD] Triggering JioSaavn search/download fallback for {video_id}")
         title, _, dur_sec, _, _ = await YouTube.details(video_id, videoid=True)
         js_res = await cls._try_jiosaavn_api(video_id, is_video=False, title=title, duration_sec=dur_sec)
         if js_res:
@@ -652,15 +666,7 @@ class YouTubeAPI:
 
         vidid = extract_video_id(link)
 
-        # Primary Search Option: JioSaavn Search API for audio track resolution
-        if not ("youtube.com" in link or "youtu.be" in link):
-            js_res = await self._jiosaavn_extract_track_info(link)
-            if js_res:
-                details_dict, v_id = js_res
-                duration_sec = time_to_seconds(details_dict["duration_min"])
-                return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
-
-        # Fallback Multi-Result Search: VideosSearch
+        # Priority 1: Multi-Result YouTube Search via VideosSearch if query is a search term
         if VideosSearch is not None and not ("youtube.com" in link or "youtu.be" in link):
             try:
                 LOGGER(__name__).info(f"[YT-SEARCH] Searching multiple results via VideosSearch for: {link}")
@@ -680,21 +686,22 @@ class YouTubeAPI:
             except Exception as e:
                 LOGGER(__name__).error(f"[YT-SEARCH] VideosSearch details error: {e}")
 
-        # Fallback 1: yt-dlp metadata extraction
+        # Priority 2: yt-dlp metadata extraction
         yt_res = await self._ytdl_extract_track_info(link)
         if yt_res:
             details_dict, v_id = yt_res
             duration_sec = time_to_seconds(details_dict["duration_min"])
             return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
 
-        # Fallback 2: JioSaavn Search API
-        js_res = await self._jiosaavn_extract_track_info(link)
-        if js_res:
-            details_dict, v_id = js_res
-            duration_sec = time_to_seconds(details_dict["duration_min"])
-            return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
+        # Fallback: JioSaavn Search API
+        if not ("youtube.com" in link or "youtu.be" in link):
+            js_res = await self._jiosaavn_extract_track_info(link)
+            if js_res:
+                details_dict, v_id = js_res
+                duration_sec = time_to_seconds(details_dict["duration_min"])
+                return details_dict["title"], details_dict["duration_min"], duration_sec, details_dict["thumb"], v_id
 
-        # Fallback 3: oEmbed details
+        # Fallback 2: oEmbed details
         title, thumbnail = await self._oembed_details(vidid)
         return title, "0:00", 0, thumbnail, vidid
 
@@ -755,13 +762,7 @@ class YouTubeAPI:
 
         vidid = extract_video_id(link)
 
-        # Priority 1: JioSaavn Search API for direct song resolution
-        if not ("youtube.com" in link or "youtu.be" in link):
-            js_res = await self._jiosaavn_extract_track_info(link)
-            if js_res:
-                return js_res
-
-        # Priority 2: Multi-result search via VideosSearch if it's a search term
+        # Priority 1: Multi-result search via VideosSearch if it's a search term
         if VideosSearch is not None and not ("youtube.com" in link or "youtu.be" in link):
             try:
                 LOGGER(__name__).info(f"[YT-SEARCH] Multi-result track search for: '{link}'")
@@ -788,17 +789,18 @@ class YouTubeAPI:
             except Exception as e:
                 LOGGER(__name__).error(f"[YT-SEARCH] YouTube.track VideosSearch error for '{link}': {e}")
 
-        # Fallback 1: yt-dlp metadata extraction
+        # Priority 2: yt-dlp metadata extraction
         yt_res = await self._ytdl_extract_track_info(link)
         if yt_res:
             return yt_res
 
-        # Fallback 2: JioSaavn Search API
-        js_res = await self._jiosaavn_extract_track_info(link)
-        if js_res:
-            return js_res
+        # Fallback: JioSaavn Search API
+        if not ("youtube.com" in link or "youtu.be" in link):
+            js_res = await self._jiosaavn_extract_track_info(link)
+            if js_res:
+                return js_res
 
-        # Fallback 3: oEmbed details
+        # Fallback 2: oEmbed details
         title, thumbnail = await self._oembed_details(vidid)
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         track_details = {
