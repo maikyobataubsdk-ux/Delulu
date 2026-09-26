@@ -240,7 +240,7 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
         else "bestaudio/best/ba/b"
     )
 
-    player_clients = ["ios", "tvhtml5"] if not cookie_file else ["mweb", "web", "ios", "android"]
+    player_clients = ["android", "ios", "web"] if not cookie_file else ["ios", "android", "web"]
 
     yt_extractor_args: Dict[str, Any] = {"player_client": player_clients}
 
