@@ -209,25 +209,42 @@ async def stream(
                     image=thumbnail,
                 )
             except Exception as join_err:
-                if direct and isinstance(file_path, str) and file_path.startswith("http"):
-                    LOGGER(__name__).warning(f"[STREAM-FALLBACK] Sona.join_call failed for direct URL {file_path}: {join_err}. Retrying with YouTube download fallback.")
-                    yt_file = await YouTube.download(vidid, mystic, video=status, videoid=True)
-                    if isinstance(yt_file, tuple):
-                        yt_path, yt_direct = yt_file
-                    else:
-                        yt_path, yt_direct = yt_file, False
-                    if yt_path:
-                        file_path = yt_path
-                        direct = yt_direct
+                if isinstance(file_path, str) and file_path.startswith("http"):
+                    LOGGER(__name__).warning(f"[STREAM-FALLBACK] Sona.join_call failed for direct URL {file_path}: {join_err}. Retrying with audio fallback.")
+                    from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
+                    saavn_file = await JioSaavn.download_song_by_query(
+                        query=title,
+                        dest_filename=f"{vidid}.mp3",
+                        target_title=title,
+                    )
+                    if saavn_file and os.path.exists(saavn_file):
+                        file_path = saavn_file
+                        direct = False
                         await Sona.join_call(
                             chat_id,
                             original_chat_id,
                             file_path,
-                            video=status,
+                            video=None,
                             image=thumbnail,
                         )
                     else:
-                        raise join_err
+                        yt_file = await YouTube.download(vidid, mystic, video=None, videoid=True)
+                        if isinstance(yt_file, tuple):
+                            yt_path, yt_direct = yt_file
+                        else:
+                            yt_path, yt_direct = yt_file, False
+                        if yt_path and yt_path != file_path:
+                            file_path = yt_path
+                            direct = yt_direct
+                            await Sona.join_call(
+                                chat_id,
+                                original_chat_id,
+                                file_path,
+                                video=None,
+                                image=thumbnail,
+                            )
+                        else:
+                            raise join_err
                 else:
                     raise join_err
 

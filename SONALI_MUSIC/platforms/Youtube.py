@@ -171,14 +171,16 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
 
         info = await asyncio.wait_for(asyncio.to_thread(_extract_l1), timeout=12)
         if info:
-            stream_url = info.get("url")
-            if not stream_url and "formats" in info:
+            stream_url = None
+            if "formats" in info and isinstance(info["formats"], list):
                 for fmt in info["formats"]:
                     if fmt.get("acodec") not in (None, "none") and fmt.get("vcodec") in (None, "none") and fmt.get("url"):
                         stream_url = fmt["url"]
                         break
-                if not stream_url and info["formats"]:
-                    stream_url = info["formats"][-1].get("url")
+            if not stream_url:
+                stream_url = info.get("url")
+            if not stream_url and "formats" in info and isinstance(info["formats"], list) and info["formats"]:
+                stream_url = info["formats"][-1].get("url")
             if stream_url:
                 LOGGER(__name__).info(f"[YT-STREAM:L1] Success! Direct stream retrieved for {video_id}")
                 return stream_url
@@ -319,19 +321,84 @@ class YouTubeExtractor:
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
         stream_url = await get_youtube_stream(video_id, yt_link)
 
+        if stream_url and (stream_url.startswith("http://") or stream_url.startswith("https://")):
+            dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
+                saved = await _save_stream_to_file(session, stream_url, dest_path)
+                if saved:
+                    AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
+                    return dest_path
+
+        # Fallback 1: Direct yt-dlp local audio download
+        cookie_file = get_next_cookie_file()
+        try:
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Fallback 1: Direct yt-dlp local download for video_id: {video_id}")
+            ydl_opts = {
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+            }
+            if cookie_file:
+                ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+
+            def _dl_ytdl():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([yt_link])
+
+            await asyncio.to_thread(_dl_ytdl)
+            dl_file = find_downloaded_file(video_id, is_video=False)
+            if dl_file:
+                AudioCache.set(video_id=video_id, local_path=dl_file, source="youtube")
+                return dl_file
+        except Exception as e:
+            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 1 (yt-dlp) failed for {video_id}: {e}")
+
+        # Fallback 2: JioSaavn API audio search and download
+        try:
+            LOGGER(__name__).info(f"[YT-DOWNLOAD] Fallback 2: JioSaavn API search and download for video_id: {video_id}")
+            from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
+            track_title = video_id
+            try:
+                title_res, _ = await YouTube._oembed_details(video_id)
+                if title_res and title_res != "Unknown Title":
+                    track_title = title_res
+            except Exception:
+                pass
+
+            saavn_file = await JioSaavn.download_song_by_query(
+                query=track_title,
+                dest_filename=f"{video_id}.mp3",
+                target_title=track_title,
+            )
+            if saavn_file and is_valid_media_file(saavn_file):
+                AudioCache.set(video_id=video_id, local_path=saavn_file, source="jiosaavn")
+                return saavn_file
+
+            song_info = await JioSaavn.search_song(query=track_title, target_title=track_title)
+            if song_info and song_info.get("stream_url"):
+                s_url = song_info["stream_url"]
+                _JIOSAAVN_CACHE[video_id] = s_url
+                AudioCache.set(video_id=video_id, local_path=s_url, source="jiosaavn")
+                return s_url
+        except Exception as saavn_err:
+            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 2 (JioSaavn) failed for {video_id}: {saavn_err}")
+
         if stream_url:
-            if stream_url.startswith("http://") or stream_url.startswith("https://"):
-                dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-                connector = aiohttp.TCPConnector(ssl=False)
-                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
-                    saved = await _save_stream_to_file(session, stream_url, dest_path)
-                    if saved:
-                        AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
-                        return dest_path
+            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Returning raw stream_url as last resort for {video_id}")
             AudioCache.set(video_id=video_id, local_path=stream_url, source="youtube")
             return stream_url
 
-        LOGGER(__name__).error(f"[YT-DOWNLOAD] All extraction layers failed for video_id: {video_id}")
+        LOGGER(__name__).error(f"[YT-DOWNLOAD] All extraction layers and fallbacks failed for video_id: {video_id}")
         return None
 
     @classmethod
