@@ -161,9 +161,51 @@ class AudioCache:
         cls._save()
         LOGGER(__name__).info(f"[AUDIO-CACHE] Cached track record for video_id: {video_id}")
 
-# In-memory session cache for cookie usability testing
+import asyncio
+import threading
+
+# In-memory session cache for cookie usability testing and owner notification
 _UNUSABLE_COOKIES: Set[str] = set()
 _TESTED_COOKIES: Dict[str, bool] = {}
+_NOTIFIED_EXPIRED_COOKIES: Set[str] = set()
+_COOKIE_INDEX: int = 0
+_COOKIE_LOCK = threading.Lock()
+
+
+async def notify_owner_cookie_expired(cookie_path: str, reason: str = "Expired / Bot check triggered"):
+    """Notifies bot owner via Telegram message if a cookie file expires or becomes unusable."""
+    abs_p = os.path.abspath(cookie_path)
+    if abs_p in _NOTIFIED_EXPIRED_COOKIES:
+        return
+    _NOTIFIED_EXPIRED_COOKIES.add(abs_p)
+
+    filename = os.path.basename(cookie_path)
+    owner_id = getattr(config, "OWNER_ID", None)
+    logger_id = getattr(config, "LOGGER_ID", None)
+
+    msg_text = (
+        f"⚠️ <b>YouTube Cookie Expired / Invalid!</b>\n\n"
+        f"📁 <b>Cookie File:</b> <code>{filename}</code>\n"
+        f"❌ <b>Reason:</b> {reason}\n\n"
+        f"💡 <i>Please replace or update this cookie file in the <code>cookies/</code> directory.</i>"
+    )
+
+    try:
+        from SONALI_MUSIC import app
+        if app and hasattr(app, "send_message"):
+            if owner_id:
+                try:
+                    await app.send_message(owner_id, msg_text)
+                    LOGGER(__name__).info(f"[COOKIE-NOTIFY] Owner {owner_id} notified about expired cookie: {filename}")
+                except Exception as e:
+                    LOGGER(__name__).error(f"[COOKIE-NOTIFY] Failed to notify owner {owner_id}: {e}")
+            if logger_id and logger_id != owner_id:
+                try:
+                    await app.send_message(logger_id, msg_text)
+                except Exception as e:
+                    LOGGER(__name__).error(f"[COOKIE-NOTIFY] Failed to notify logger channel {logger_id}: {e}")
+    except Exception as e:
+        LOGGER(__name__).error(f"[COOKIE-NOTIFY] Error during owner notification: {e}")
 
 
 def is_bgutil_server_running() -> bool:
@@ -335,10 +377,38 @@ def classify_ytdl_error(error_msg_or_exc: Union[str, Exception]) -> Tuple[str, s
     return "UNKNOWN_ERROR", msg
 
 
-def mark_cookie_unusable(cookie_path: str):
+def mark_cookie_unusable(cookie_path: str, reason: str = "Bot check or Auth required"):
     abs_p = os.path.abspath(cookie_path)
     _UNUSABLE_COOKIES.add(abs_p)
     _TESTED_COOKIES[abs_p] = False
+    LOGGER(__name__).warning(f"[COOKIE] Marked unusable: {abs_p} (Reason: {reason})")
+
+    try:
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
+        if not loop or not loop.is_running():
+            try:
+                from SONALI_MUSIC import app
+                if app and hasattr(app, "loop") and app.loop and app.loop.is_running():
+                    loop = app.loop
+            except Exception:
+                pass
+
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(notify_owner_cookie_expired(cookie_path, reason), loop)
+        else:
+            try:
+                new_loop = asyncio.new_event_loop()
+                new_loop.run_until_complete(notify_owner_cookie_expired(cookie_path, reason))
+                new_loop.close()
+            except Exception as e:
+                LOGGER(__name__).error(f"[COOKIE] Failed to dispatch owner notification: {e}")
+    except Exception as e:
+        LOGGER(__name__).error(f"[COOKIE] Error scheduling owner notification: {e}")
 
 
 def mark_cookie_usable(cookie_path: str):
@@ -360,7 +430,7 @@ def test_cookie_file(cookie_path: str, force_test: bool = False) -> bool:
         return _TESTED_COOKIES[abs_p]
 
     if not os.path.exists(abs_p) or os.path.getsize(abs_p) == 0:
-        mark_cookie_unusable(abs_p)
+        mark_cookie_unusable(abs_p, "Cookie file missing or empty")
         return False
 
     opts = get_ytdl_base_opts(abs_p)
@@ -371,9 +441,9 @@ def test_cookie_file(cookie_path: str, force_test: bool = False) -> bool:
         mark_cookie_usable(abs_p)
         return True
     except Exception as e:
-        err_cat, _ = classify_ytdl_error(e)
+        err_cat, err_msg = classify_ytdl_error(e)
         if err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
-            mark_cookie_unusable(abs_p)
+            mark_cookie_unusable(abs_p, f"{err_cat}: {err_msg}")
             return False
         # If it's a network glitch or non-auth issue, keep it tentatively allowed
         _TESTED_COOKIES[abs_p] = True
@@ -388,8 +458,17 @@ def get_cookie_files() -> List[str]:
     if env_cookie:
         candidates.append(env_cookie)
 
+    cookies_dir = "cookies"
+    if os.path.exists(cookies_dir) and os.path.isdir(cookies_dir):
+        try:
+            dir_files = sorted(os.listdir(cookies_dir))
+            for f in dir_files:
+                if f.endswith(".txt"):
+                    candidates.append(os.path.join(cookies_dir, f))
+        except Exception as e:
+            LOGGER(__name__).error(f"Error scanning cookies directory: {e}")
+
     project_paths = [
-        "cookies/cookies.txt",
         "SONALI_MUSIC/assets/cookies.txt",
         "assets/cookies.txt",
     ]
@@ -406,12 +485,30 @@ def get_cookie_files() -> List[str]:
     return existing_files
 
 
-def get_cookie_file() -> Optional[str]:
+def get_next_cookie_file() -> Optional[str]:
+    """
+    Returns the next usable cookie file path using thread-safe round-robin rotation.
+    If multiple usable cookies exist (e.g. 7-8 files), each call returns the next cookie file.
+    """
+    global _COOKIE_INDEX
     valid_files = get_valid_cookie_files()
-    if valid_files:
-        return valid_files[0]
-    all_files = get_cookie_files()
-    return all_files[0] if all_files else None
+    if not valid_files:
+        all_files = get_cookie_files()
+        if not all_files:
+            return None
+        valid_files = all_files
+
+    with _COOKIE_LOCK:
+        _COOKIE_INDEX = _COOKIE_INDEX % len(valid_files)
+        selected_cookie = valid_files[_COOKIE_INDEX]
+        _COOKIE_INDEX = (_COOKIE_INDEX + 1) % len(valid_files)
+
+    LOGGER(__name__).info(f"[COOKIE-ROTATION] Selected cookie #{_COOKIE_INDEX} / {len(valid_files)}: {os.path.basename(selected_cookie)}")
+    return selected_cookie
+
+
+def get_cookie_file() -> Optional[str]:
+    return get_next_cookie_file()
 
 
 def analyze_cookies(cookie_path: Optional[str] = None, run_extraction_test: bool = False) -> Dict[str, Any]:

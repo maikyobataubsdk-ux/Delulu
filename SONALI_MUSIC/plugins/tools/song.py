@@ -26,7 +26,13 @@ from config import (BANNED_USERS, SONG_DOWNLOAD_DURATION,
 from SONALI_MUSIC.utils.decorators.language import language, languageCB
 from SONALI_MUSIC.utils.formatters import convert_bytes
 from SONALI_MUSIC.utils.inline.song import song_markup
-from SONALI_MUSIC.utils.youtube_utils import get_valid_cookie_files, classify_ytdl_error, get_ytdl_base_opts, mark_cookie_unusable
+from SONALI_MUSIC.utils.youtube_utils import (
+    get_valid_cookie_files,
+    get_next_cookie_file,
+    classify_ytdl_error,
+    get_ytdl_base_opts,
+    mark_cookie_unusable,
+)
 
 # Command
 SONG_COMMAND = ["song"]
@@ -244,6 +250,10 @@ async def song_download_cb(client, CallbackQuery, _):
     yturl = f"https://www.youtube.com/watch?v={vidid}"
 
     valid_cookie_files = get_valid_cookie_files()
+    next_cookie = get_next_cookie_file()
+    if next_cookie and next_cookie in valid_cookie_files:
+        valid_cookie_files.remove(next_cookie)
+        valid_cookie_files.insert(0, next_cookie)
     cookie_candidates = valid_cookie_files + [None]
 
     x = None

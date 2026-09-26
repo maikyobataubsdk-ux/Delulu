@@ -7,6 +7,7 @@ from SONALI_MUSIC import LOGGER
 from SONALI_MUSIC.platforms.Youtube import YouTubeExtractor, extract_video_id, is_valid_media_file
 from SONALI_MUSIC.utils.youtube_utils import (
     get_valid_cookie_files,
+    get_next_cookie_file,
     classify_ytdl_error,
     get_ytdl_base_opts,
     mark_cookie_unusable,
@@ -60,6 +61,10 @@ def download(url: str, my_hook=None) -> str:
 
     # Attempt 2: Local yt-dlp Multi-Cookie and No-Cookie Sequential Fallback
     valid_cookie_files = get_valid_cookie_files()
+    next_cookie = get_next_cookie_file()
+    if next_cookie and next_cookie in valid_cookie_files:
+        valid_cookie_files.remove(next_cookie)
+        valid_cookie_files.insert(0, next_cookie)
     cookie_candidates = valid_cookie_files + [None]
 
     info = None

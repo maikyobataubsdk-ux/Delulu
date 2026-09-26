@@ -28,6 +28,9 @@ from SONALI_MUSIC.utils.youtube_utils import (
     classify_ytdl_error,
     CircuitBreaker,
     AudioCache,
+    get_next_cookie_file,
+    is_cookie_usable as is_cookie_file_usable,
+    mark_cookie_unusable,
 )
 
 _JIOSAAVN_CACHE: Dict[str, str] = {}
@@ -39,8 +42,10 @@ DEFAULT_HEADERS = {
 
 
 def is_cookie_usable(cookie_file: Optional[str] = None) -> bool:
-    """Zero-cookie rule active: manual cookies disabled."""
-    return False
+    if cookie_file:
+        return is_cookie_file_usable(cookie_file)
+    cookie = get_next_cookie_file()
+    return bool(cookie and is_cookie_file_usable(cookie))
 
 
 def extract_video_id(link: str) -> str:
@@ -141,9 +146,10 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
     target_url = url or f"https://www.youtube.com/watch?v={video_id}"
     LOGGER(__name__).info(f"[YT-STREAM] Initiating YouTube extraction chain for video_id: {video_id}")
 
-    # LAYER 1: yt-dlp Mobile Client Spoofing (Primary)
+    # LAYER 1: yt-dlp Mobile Client Spoofing + Rotated Cookie (Primary)
+    cookie_file = get_next_cookie_file()
     try:
-        LOGGER(__name__).info(f"[YT-STREAM:L1] Attempting yt-dlp mobile client spoofing for {video_id}")
+        LOGGER(__name__).info(f"[YT-STREAM:L1] Attempting yt-dlp mobile client spoofing with cookie ({os.path.basename(cookie_file) if cookie_file else 'none'}) for {video_id}")
         ydl_opts = {
             "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
             "extractor_args": {
@@ -156,6 +162,8 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
             "quiet": True,
             "no_warnings": True,
         }
+        if cookie_file:
+            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
 
         def _extract_l1():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -175,6 +183,9 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
                 LOGGER(__name__).info(f"[YT-STREAM:L1] Success! Direct stream retrieved for {video_id}")
                 return stream_url
     except Exception as e:
+        err_cat, err_msg = classify_ytdl_error(e)
+        if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+            mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
         LOGGER(__name__).warning(f"[YT-STREAM:L1] Layer 1 (yt-dlp) failed for {video_id}: {e}")
 
     # LAYER 2: pytubefix (Backup 1)
@@ -337,6 +348,7 @@ class YouTubeExtractor:
             return existing_file
 
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
+        cookie_file = get_next_cookie_file()
 
         try:
             ydl_opts = {
@@ -352,6 +364,8 @@ class YouTubeExtractor:
                 "quiet": True,
                 "no_warnings": True,
             }
+            if cookie_file:
+                ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
 
             def _dl_vid():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -362,6 +376,9 @@ class YouTubeExtractor:
             if downloaded:
                 return downloaded
         except Exception as e:
+            err_cat, err_msg = classify_ytdl_error(e)
+            if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Video extraction failed for {video_id}: {e}")
 
         LOGGER(__name__).warning(f"[YT-DOWNLOAD] Video extraction failed for {video_id}. Falling back to audio mode.")
@@ -401,6 +418,7 @@ class YouTubeAPI:
 
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
         target = query_or_url if ("youtube.com" in query_or_url or "youtu.be" in query_or_url) else f"ytsearch5:{query_or_url}"
+        cookie_file = get_next_cookie_file()
         ydl_opts = {
             "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
             "extractor_args": {
@@ -413,6 +431,8 @@ class YouTubeAPI:
             "quiet": True,
             "no_warnings": True,
         }
+        if cookie_file:
+            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
 
         def _extract():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -444,6 +464,8 @@ class YouTubeAPI:
                     return track_details, v_id
         except Exception as e:
             err_type, err_msg = classify_ytdl_error(e)
+            if cookie_file and err_type in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file, f"{err_type}: {err_msg}")
             LOGGER(__name__).warning(f"[YT-EXTRACT] Track search error ({err_type}) for {query_or_url}: {err_msg}")
         return None
 
@@ -608,6 +630,7 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
 
+        cookie_file = get_next_cookie_file()
         formats_available = []
         ydl_opts = {
             "format": "bestaudio/best",
@@ -621,6 +644,8 @@ class YouTubeAPI:
             "quiet": True,
             "no_warnings": True,
         }
+        if cookie_file:
+            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
 
         def _extract_formats():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -645,6 +670,9 @@ class YouTubeAPI:
                     except Exception:
                         continue
         except Exception as e:
+            err_cat, err_msg = classify_ytdl_error(e)
+            if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+                mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
             LOGGER(__name__).error(f"[YT-EXTRACT] YouTube.formats error: {e}")
 
         return formats_available, link
