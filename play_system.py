@@ -4,6 +4,11 @@ from typing import Tuple, Dict, Any, Optional
 import aiohttp
 import yt_dlp
 from pytgcalls.types import MediaStream, AudioQuality
+from SONALI_MUSIC.utils.youtube_utils import (
+    get_next_cookie_file,
+    classify_ytdl_error,
+    mark_cookie_unusable,
+)
 
 
 class SilentLogger:
@@ -63,7 +68,8 @@ async def _check_stream_url(url: str) -> bool:
 
 
 def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[str, Any]]:
-    """Synchronous yt-dlp extraction with specified player_client profile."""
+    """Synchronous yt-dlp extraction with specified player_client profile and rotated cookie."""
+    cookie_file = get_next_cookie_file()
     ydl_opts = {
         "format": "bestaudio/best/ba/b",
         "format_sort": ["res", "ext:m4a:m4a", "acodec"],
@@ -79,6 +85,9 @@ def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[s
             }
         },
     }
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url_or_query, download=False)
@@ -125,8 +134,10 @@ def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[s
                     "duration": duration_str,
                     "source": "YouTube",
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        err_cat, err_msg = classify_ytdl_error(e)
+        if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+            mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
     return None
 
 
