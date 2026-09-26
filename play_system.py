@@ -3,6 +3,7 @@ import re
 from typing import Tuple, Dict, Any, Optional
 import aiohttp
 import yt_dlp
+import config
 from pytgcalls.types import MediaStream, AudioQuality
 from SONALI_MUSIC.utils.youtube_utils import (
     get_next_cookie_file,
@@ -303,10 +304,15 @@ async def play_audio_stream(
     source = extracted_data["source"]
 
     try:
+        speed = getattr(config, "PLAYBACK_SPEED", 1.15)
+        ffmpeg_params = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        if speed and str(speed) != "1.0":
+            ffmpeg_params += f" -filter:a atempo={speed}"
+
         media_stream = MediaStream(
             media_path=stream_url,
             audio_parameters=AudioQuality.HIGH,
-            ffmpeg_parameters="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+            ffmpeg_parameters=ffmpeg_params,
         )
         await pytgcalls_client.play(chat_id, media_stream)
         msg = f"Started playing '{title}' ({duration}) via {source}."

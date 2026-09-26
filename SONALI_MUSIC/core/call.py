@@ -96,6 +96,15 @@ class Call(PyTgCalls):
         video: bool,
         ffmpeg: str | None = None,
     ) -> types.MediaStream:
+        speed = getattr(config, "PLAYBACK_SPEED", 1.15)
+        if speed and str(speed) != "1.0":
+            speed_str = str(speed)
+            if ffmpeg:
+                if "atempo=" not in ffmpeg and "-filter:a" not in ffmpeg and "-af" not in ffmpeg:
+                    ffmpeg = f"{ffmpeg} -filter:a atempo={speed_str}"
+            else:
+                ffmpeg = f"-filter:a atempo={speed_str}"
+
         return types.MediaStream(
             media_path=source,
             audio_parameters=types.AudioQuality.HIGH,
@@ -185,6 +194,8 @@ class Call(PyTgCalls):
                     vs = 2.0
                 elif str(speed) == "0.75":
                     vs = 1.35
+                elif str(speed) == "1.15":
+                    vs = 0.87
                 elif str(speed) == "1.5":
                     vs = 0.68
                 elif str(speed) == "2.0":

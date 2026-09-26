@@ -88,6 +88,8 @@ def speed_converter(seconds, speed):
         seconds = seconds * 2
     if str(speed) == str("0.75"):
         seconds = seconds + ((50 * seconds) // 100)
+    if str(speed) == str("1.15"):
+        seconds = int(seconds / 1.15) if seconds is not None else 0
     if str(speed) == str("1.5"):
         seconds = seconds - ((25 * seconds) // 100)
     if str(speed) == str("2.0"):
