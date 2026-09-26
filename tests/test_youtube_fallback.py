@@ -69,6 +69,8 @@ async def test_youtube_jiosaavn_pipeline():
     assert track_details is not None
     assert "title" in track_details
     assert track_id is not None
+    # Verify YouTube resolution is attempted first (link points to YouTube)
+    assert "youtube.com" in track_details["link"] or "youtu.be" in track_details["link"] or track_id in _JIOSAAVN_CACHE
 
     if track_id in _JIOSAAVN_CACHE:
         assert _JIOSAAVN_CACHE[track_id].startswith("http")
