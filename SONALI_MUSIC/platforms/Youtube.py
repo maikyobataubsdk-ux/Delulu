@@ -115,7 +115,7 @@ async def _save_stream_to_file(session: aiohttp.ClientSession, url: str, dest_pa
         req_headers = DEFAULT_HEADERS.copy()
         if headers:
             req_headers.update(headers)
-        async with session.get(url, headers=req_headers, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+        async with session.get(url, headers=req_headers, timeout=aiohttp.ClientTimeout(total=120), ssl=False) as resp:
             if resp.status == 200:
                 with open(dest_path, "wb") as f:
                     async for chunk in resp.content.iter_chunked(131072):
@@ -184,10 +184,11 @@ class YouTubeExtractor:
         media_type = "video" if is_video else "audio"
         try:
             LOGGER(__name__).info(f"[YT-API] Attempting Shruti API for {video_id} ({media_type})")
-            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
                 url = f"{SHRUTI_API_URL}/download"
                 params = {"url": video_id, "type": media_type, "api_key": SHRUTI_API_KEY}
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                     if resp.status == 200:
                         with open(dest_path, "wb") as f:
                             async for chunk in resp.content.iter_chunked(131072):
@@ -220,11 +221,12 @@ class YouTubeExtractor:
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
         media_type = "video" if is_video else "audio"
         try:
-            LOGGER(__name__).info(f"[YT-API] Attempting Pytdbot/QuickEarn API for {video_id}")
-            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+            LOGGER(__name__).info(f"[YT-API] Attempting External API ({api_base}) for {video_id}")
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
                 url = f"{api_base}/download"
                 params = {"url": video_id, "type": media_type}
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     if resp.status == 200:
                         content_type = resp.headers.get("Content-Type", "")
                         if "json" in content_type:
@@ -232,7 +234,7 @@ class YouTubeExtractor:
                             direct_link = data.get("download_url") or data.get("url") or data.get("link")
                             if direct_link and await _save_stream_to_file(session, direct_link, dest_path):
                                 CircuitBreaker.record_success(api_base)
-                                LOGGER(__name__).info(f"[YT-API] Pytdbot API JSON direct stream successful for {video_id}")
+                                LOGGER(__name__).info(f"[YT-API] External API JSON direct stream successful for {video_id}")
                                 return dest_path
                         else:
                             with open(dest_path, "wb") as f:
@@ -240,7 +242,7 @@ class YouTubeExtractor:
                                     f.write(chunk)
                             if is_valid_media_file(dest_path):
                                 CircuitBreaker.record_success(api_base)
-                                LOGGER(__name__).info(f"[YT-API] Pytdbot API direct binary successful for {video_id}")
+                                LOGGER(__name__).info(f"[YT-API] External API direct binary successful for {video_id}")
                                 return dest_path
                             elif os.path.exists(dest_path):
                                 os.remove(dest_path)
@@ -249,7 +251,7 @@ class YouTubeExtractor:
         except Exception as e:
             err_cat, _ = classify_ytdl_error(e)
             CircuitBreaker.record_failure(api_base, error_type=err_cat)
-            LOGGER(__name__).warning(f"[YT-API] Pytdbot API failed for {video_id}: {e}")
+            LOGGER(__name__).warning(f"[YT-API] External API failed for {video_id}: {e}")
             if os.path.exists(dest_path):
                 try:
                     os.remove(dest_path)
@@ -287,8 +289,9 @@ class YouTubeExtractor:
                     "downloadMode": "auto" if is_video else "audio",
                     "audioFormat": "mp3",
                 }
-                async with aiohttp.ClientSession(headers=headers) as session:
-                    async with session.post(endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(headers=headers, connector=connector) as session:
+                    async with session.post(endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             direct_url = data.get("url")
@@ -324,10 +327,13 @@ class YouTubeExtractor:
         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{dest_ext}")
 
         for inst in invidious_instances:
+            if not CircuitBreaker.is_available(inst):
+                continue
             try:
-                LOGGER(__name__).info(f"[YT-API] Attempting Invidious/Piped API for {video_id}")
-                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
-                    async with session.get(inst, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                LOGGER(__name__).info(f"[YT-API] Attempting Invidious/Piped API ({inst}) for {video_id}")
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
+                    async with session.get(inst, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             stream_url = None
@@ -345,9 +351,14 @@ class YouTubeExtractor:
                                 stream_url = data["videoStreams"][0].get("url")
 
                             if stream_url and await _save_stream_to_file(session, stream_url, dest_path):
+                                CircuitBreaker.record_success(inst)
                                 LOGGER(__name__).info(f"[YT-API] Invidious/Piped API stream successful for {video_id}")
                                 return dest_path
+                        else:
+                            CircuitBreaker.record_failure(inst, status_code=resp.status)
             except Exception as e:
+                err_cat, _ = classify_ytdl_error(e)
+                CircuitBreaker.record_failure(inst, error_type=err_cat)
                 LOGGER(__name__).debug(f"[YT-API] Invidious/Piped instance failed for {video_id}: {e}")
                 if os.path.exists(dest_path):
                     try:
@@ -372,25 +383,28 @@ class YouTubeExtractor:
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
         loop = asyncio.get_event_loop()
 
-        # Step 1: Local yt-dlp Sequential Client Spoofing Pipeline (No Cookies required)
+        # Step 1: Local yt-dlp Sequential Client Spoofing Pipeline & OAuth2 Fallback (No Cookies required)
         modes = [
-            ("profile1_android", ["android"], None, True),
-            ("profile2_android_vr", ["android_vr"], None, True),
-            ("profile3_ios", ["ios"], None, True),
-            ("profile4_tv", ["tv"], None, True),
-            ("profile5_web", ["web"], None, True),
+            ("profile1_ios_mweb", ["ios", "mweb"], None, False, False),
+            ("profile2_android_tv", ["android", "tv"], None, False, True),
+            ("profile3_mweb_ios", ["mweb", "ios", "android"], None, False, True),
+            ("profile4_tv_ios", ["tv", "ios", "mweb"], None, False, False),
+            ("profile5_oauth2", ["ios", "mweb"], None, True, False),
         ]
 
-        for mode_name, clients, cookie_file, use_pot in modes:
+        for mode_name, clients, cookie_file, use_oauth2, use_pot in modes:
             for retry in range(1, 3):
                 try:
                     c_label = os.path.basename(cookie_file) if cookie_file else "no-cookies"
-                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying mode '{mode_name}' (attempt {retry}/2, cookie={c_label}) for {video_id}")
-                    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
-                    yt_args = {"player_client": clients}
+                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying mode '{mode_name}' (attempt {retry}/2, cookie={c_label}, oauth2={use_oauth2}) for {video_id}")
+                    ydl_opts = get_ytdl_base_opts(
+                        cookie_file=cookie_file,
+                        is_video=False,
+                        use_oauth2=use_oauth2,
+                        player_clients=clients,
+                    )
                     if use_pot and is_bgutil_server_running() and POT_PROVIDER_URL:
-                        yt_args["po_token"] = [f"web+{POT_PROVIDER_URL}"]
-                    ydl_opts["extractor_args"] = {"youtube": yt_args}
+                        ydl_opts["extractor_args"]["youtube"]["po_token"] = [f"web+{POT_PROVIDER_URL}"]
                     ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
 
                     await loop.run_in_executor(
@@ -411,10 +425,10 @@ class YouTubeExtractor:
 
         # Step 2: External YouTube API Downloaders
         yt_api_providers = [
-            cls._try_shruti_api,
-            cls._try_pytdbot_api,
             cls._try_cobalt_api,
             cls._try_invidious_piped_api,
+            cls._try_shruti_api,
+            cls._try_pytdbot_api,
         ]
 
         for provider in yt_api_providers:
@@ -480,10 +494,10 @@ class YouTubeExtractor:
 
         # Step 1: External API Video Providers
         api_providers = [
-            cls._try_shruti_api,
-            cls._try_pytdbot_api,
             cls._try_cobalt_api,
             cls._try_invidious_piped_api,
+            cls._try_shruti_api,
+            cls._try_pytdbot_api,
         ]
 
         for provider in api_providers:
@@ -522,7 +536,7 @@ class YouTubeExtractor:
         # Step 3: Local yt-dlp Video No-Cookie
         try:
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Local yt-dlp video (no cookies) for {video_id}")
-            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=True)
+            ydl_opts_nocookie = get_ytdl_base_opts(cookie_file=None, is_video=True, player_clients=["ios", "mweb", "android", "tv"])
             ydl_opts_nocookie.update({
                 "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             })

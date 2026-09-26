@@ -23,7 +23,7 @@ class TestYouTubePipeline(unittest.TestCase):
 
     def test_format_selector(self):
         opts = get_ytdl_base_opts(is_video=False)
-        self.assertEqual(opts["format"], "bestaudio/best/ba/b")
+        self.assertEqual(opts["format"], "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best")
         self.assertEqual(opts["format_sort"], ["res", "ext:m4a:m4a", "acodec"])
 
     def test_manual_format_parsing(self):
