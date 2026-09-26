@@ -11,6 +11,7 @@ from SONALI_MUSIC.utils.youtube_utils import (
     classify_ytdl_error,
     get_ytdl_base_opts,
 )
+from SONALI_MUSIC.platforms.Youtube import is_cookie_usable as youtube_is_cookie_usable
 from SONALI_MUSIC.platforms.Jiosaavn import (
     clean_song_title,
     calculate_similarity,
@@ -131,6 +132,9 @@ class TestYouTubePipeline(unittest.TestCase):
         self.assertIsNone(cached_after_delete)
 
         shutil.rmtree(temp_dir)
+
+    def test_youtube_imports(self):
+        self.assertIsNotNone(youtube_is_cookie_usable)
 
     def test_cobalt_url_config(self):
         self.assertIsNone(config.COBALT_API_URL)
