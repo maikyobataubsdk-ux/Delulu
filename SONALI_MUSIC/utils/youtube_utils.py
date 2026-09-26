@@ -228,21 +228,30 @@ def get_yt_dlp_version() -> str:
             return "Unknown"
 
 
-def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False) -> Dict[str, Any]:
+def get_ytdl_base_opts(
+    cookie_file: Optional[str] = None,
+    is_video: bool = False,
+    use_oauth2: bool = False,
+    player_clients: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Centralized yt-dlp configuration generator.
-    Uses relaxed audio format selector 'bestaudio/best/ba/b' with format_sort.
-    Supports bgutil PO token provider via extractor_args.
+    Uses dynamic audio format selector 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best' with format_sort.
+    Configures client spoofing and optional FFmpeg post-processing.
     """
     format_selector = (
         "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         if is_video
-        else "bestaudio/best/ba/b"
+        else "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
     )
 
-    player_clients = ["android", "ios", "web"] if not cookie_file else ["ios", "android", "web"]
+    if not player_clients:
+        player_clients = ["ios", "mweb", "android", "tv"] if not cookie_file else ["ios", "android", "mweb"]
 
-    yt_extractor_args: Dict[str, Any] = {"player_client": player_clients}
+    yt_extractor_args: Dict[str, Any] = {
+        "player_client": player_clients,
+        "player_skip": ["webpage", "configs"],
+    }
 
     pot_url = getattr(config, "POT_PROVIDER_URL", "http://127.0.0.1:4416")
     if is_bgutil_server_running() and pot_url:
@@ -266,12 +275,23 @@ def get_ytdl_base_opts(cookie_file: Optional[str] = None, is_video: bool = False
         "extractor_args": {"youtube": yt_extractor_args},
     }
 
+    if use_oauth2:
+        opts["username"] = "oauth2"
+
     if not is_bgutil_server_running():
         opts["no_plugins"] = True
 
     ff_path = get_ffmpeg_path()
     if ff_path:
         opts["ffmpeg_location"] = ff_path
+        if not is_video:
+            opts["postprocessors"] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ]
 
     if cookie_file:
         abs_cookie = os.path.abspath(cookie_file)
