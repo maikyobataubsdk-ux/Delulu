@@ -19,8 +19,9 @@ class SilentLogger:
 
 # Client Spoofing Profiles (Sequential Fallback)
 CLIENT_PROFILES = [
-    ["ios", "tvhtml5"],
-    ["android", "mweb"],
+    ["android"],
+    ["android_vr"],
+    ["ios"],
     ["web"],
 ]
 
@@ -164,62 +165,79 @@ def _get_flat_search_results(query: str, limit: int = 3) -> list:
 async def _search_jiosaavn(query: str) -> Optional[Dict[str, Any]]:
     """Fallback search on JioSaavn API if YouTube fails."""
     clean_q = re.sub(r"[\(\[\{].*?[\)\]\}]", "", query).strip() or query
+
+    search_queries = []
+    if clean_q:
+        search_queries.append(clean_q)
+    parts = re.split(r"[\|\-:\/\\\\]", query)
+    if len(parts) > 1:
+        p1 = re.sub(r"[\(\[\{].*?[\)\]\}]", "", parts[0]).strip()
+        if p1 and p1 not in search_queries:
+            search_queries.append(p1)
+    if clean_q:
+        words = clean_q.split()
+        if len(words) > 3:
+            s_q = " ".join(words[:4])
+            if s_q not in search_queries:
+                search_queries.append(s_q)
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json",
     }
     async with aiohttp.ClientSession(headers=headers) as session:
-        for endpoint in JIOSAAVN_ENDPOINTS:
-            try:
-                params = {"query": clean_q, "limit": 5}
-                async with session.get(endpoint, params=params, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        results = (
-                            data.get("data", {}).get("results", [])
-                            if isinstance(data.get("data"), dict)
-                            else data.get("data", [])
-                        )
-                        if not results or not isinstance(results, list):
-                            continue
+        for q in search_queries:
+            for endpoint in JIOSAAVN_ENDPOINTS:
+                try:
+                    params = {"query": q, "limit": 5}
+                    async with session.get(endpoint, params=params, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            results = (
+                                data.get("data", {}).get("results", [])
+                                if isinstance(data.get("data"), dict)
+                                else data.get("data", [])
+                            )
+                            if not results or not isinstance(results, list):
+                                continue
 
-                        song = results[0]
-                        title = song.get("name") or song.get("title") or "JioSaavn Track"
-                        duration_sec = song.get("duration") or song.get("duration_sec") or 0
-                        try:
-                            duration_sec = int(duration_sec)
-                        except Exception:
-                            duration_sec = 0
-                        duration_str = _format_duration(duration_sec)
+                            song = results[0]
+                            title = song.get("name") or song.get("title") or "JioSaavn Track"
+                            duration_sec = song.get("duration") or song.get("duration_sec") or 0
+                            try:
+                                duration_sec = int(duration_sec)
+                            except Exception:
+                                duration_sec = 0
+                            duration_str = _format_duration(duration_sec)
 
-                        download_urls = (
-                            song.get("downloadUrl")
-                            or song.get("download_url")
-                            or song.get("media_url")
-                            or []
-                        )
-                        stream_url = None
-                        if isinstance(download_urls, list) and download_urls:
-                            for item in download_urls:
-                                if isinstance(item, dict) and item.get("quality") in ["320kbps", "160kbps"]:
-                                    stream_url = item.get("url") or item.get("link")
-                                    if stream_url:
-                                        break
-                            if not stream_url:
-                                last = download_urls[-1]
-                                stream_url = last.get("url") if isinstance(last, dict) else last.get("link") if isinstance(last, dict) else last
-                        elif isinstance(download_urls, str):
-                            stream_url = download_urls
+                            download_urls = (
+                                song.get("downloadUrl")
+                                or song.get("download_url")
+                                or song.get("media_url")
+                                or []
+                            )
+                            stream_url = None
+                            if isinstance(download_urls, list) and download_urls:
+                                for item in download_urls:
+                                    if isinstance(item, dict) and item.get("quality") in ["320kbps", "160kbps"]:
+                                        stream_url = item.get("url") or item.get("link")
+                                        if stream_url:
+                                            break
+                                if not stream_url:
+                                    last = download_urls[-1]
+                                    stream_url = last.get("url") if isinstance(last, dict) else last.get("link") if isinstance(last, dict) else last
+                            elif isinstance(download_urls, str):
+                                stream_url = download_urls
 
-                        if stream_url:
-                            return {
-                                "stream_url": stream_url,
-                                "title": title,
-                                "duration": duration_str,
-                                "source": "JioSaavn",
-                            }
-            except Exception:
-                continue
+                            if stream_url:
+                                return {
+                                    "stream_url": stream_url,
+                                    "title": title,
+                                    "duration": duration_str,
+                                    "source": "JioSaavn",
+                                }
+                except Exception:
+                    continue
     return None
 
 

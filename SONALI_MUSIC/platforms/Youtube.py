@@ -148,6 +148,18 @@ class YouTubeExtractor:
             return None
         try:
             LOGGER(__name__).info(f"[YT-API] Attempting JioSaavn audio search for '{search_query}' ({video_id})")
+            dest_filename = f"{video_id}.mp3"
+            downloaded_file = await JioSaavn.download_song_by_query(
+                query=search_query,
+                dest_filename=dest_filename,
+                target_title=title,
+                target_artist=artist,
+                target_duration=duration_sec,
+            )
+            if downloaded_file:
+                LOGGER(__name__).info(f"[YT-API] JioSaavn direct audio downloaded for {video_id}: {downloaded_file}")
+                return downloaded_file
+
             song_info = await JioSaavn.search_song(
                 query=search_query,
                 target_title=title,
@@ -362,9 +374,11 @@ class YouTubeExtractor:
 
         # Step 1: Local yt-dlp Sequential Client Spoofing Pipeline (No Cookies required)
         modes = [
-            ("profile1_ios_tvhtml5", ["ios", "tvhtml5"], None, True),
-            ("profile2_android_mweb", ["android", "mweb"], None, True),
-            ("profile3_web", ["web"], None, True),
+            ("profile1_android", ["android"], None, True),
+            ("profile2_android_vr", ["android_vr"], None, True),
+            ("profile3_ios", ["ios"], None, True),
+            ("profile4_tv", ["tv"], None, True),
+            ("profile5_web", ["web"], None, True),
         ]
 
         for mode_name, clients, cookie_file, use_pot in modes:
@@ -413,18 +427,14 @@ class YouTubeExtractor:
 
         # Step 3: Cookie-backed yt-dlp fallback (if usable cookies exist)
         valid_cookie_files = get_valid_cookie_files()
-        primary_cookie = valid_cookie_files[0] if valid_cookie_files else None
-        if primary_cookie and is_cookie_usable(primary_cookie):
-            cookie_modes = [
-                ("mweb_cookies", ["mweb"], primary_cookie, False),
-                ("default_cookies", ["mweb", "web", "ios", "android"], primary_cookie, False),
-            ]
-            for mode_name, clients, cookie_file, use_pot in cookie_modes:
+        if valid_cookie_files:
+            for idx, cookie_file in enumerate(valid_cookie_files, 1):
+                if not is_cookie_usable(cookie_file):
+                    continue
                 try:
                     c_label = os.path.basename(cookie_file)
-                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying cookie mode '{mode_name}' (cookie={c_label}) for {video_id}")
+                    LOGGER(__name__).info(f"[YT-PIPELINE] Trying cookie file #{idx} ({c_label}) for {video_id}")
                     ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
-                    ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
                     ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
 
                     await loop.run_in_executor(
@@ -438,7 +448,7 @@ class YouTubeExtractor:
                     err_cat, err_msg = classify_ytdl_error(e)
                     if err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
                         mark_cookie_unusable(cookie_file)
-                        break
+                    LOGGER(__name__).warning(f"[YT-PIPELINE] Cookie file #{idx} failed ({err_cat}): {err_msg}")
 
         # Step 4: JioSaavn Cache / API Fallback
         if video_id in _JIOSAAVN_CACHE:
