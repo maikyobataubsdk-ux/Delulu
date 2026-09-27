@@ -253,6 +253,70 @@ async def _search_jiosaavn(query: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+async def fast_search_youtube(query: str) -> Optional[str]:
+    """
+    Step 1: Fast Searching using youtube-search-python.
+    Instantly searches the user's query and gets the exact YouTube video URL in under 1 second.
+    If the query is already a YouTube link, returns it directly.
+    """
+    if not query:
+        return None
+    query = query.strip()
+    if re.match(r"^(https?://)?(www\.)?(youtube\.com|youtu\.be)/", query):
+        return query
+
+    try:
+        from youtubesearchpython.__future__ import VideosSearch
+        search = VideosSearch(query, limit=1)
+        results = await search.next()
+        if results and isinstance(results, dict) and results.get("result"):
+            first = results["result"][0]
+            if isinstance(first, dict):
+                v_id = first.get("id")
+                link = first.get("link") or (f"https://www.youtube.com/watch?v={v_id}" if v_id else None)
+                if link:
+                    return link
+    except Exception:
+        pass
+
+    # Fallback search if youtube-search-python is unavailable or fails
+    flat_res = await asyncio.get_event_loop().run_in_executor(None, _get_flat_search_results, query, 1)
+    if flat_res:
+        return flat_res[0]
+    return f"https://www.youtube.com/watch?v={query}" if len(query) == 11 else None
+
+
+async def fast_extract_from_api(exact_url: str) -> Optional[Dict[str, Any]]:
+    """
+    Step 2: Fast Extraction via FastAPI Cookie Pool.
+    Sends ONLY the exact YouTube URL to the FastAPI Cookie Pool server endpoint.
+    """
+    api_url = getattr(config, "API_URL", None) or getattr(config, "FASTAPI_URL", None) or "http://127.0.0.1:8000"
+    api_endpoint = f"{api_url.rstrip('/')}/api/extract"
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=8)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(api_endpoint, params={"url": exact_url, "video": False}) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success") and data.get("data"):
+                        extracted = data["data"]
+                        stream_url = extracted.get("stream_url")
+                        if stream_url:
+                            duration_sec = extracted.get("duration") or 0
+                            duration_str = _format_duration(duration_sec) if isinstance(duration_sec, int) else "0:00"
+                            return {
+                                "stream_url": stream_url,
+                                "title": extracted.get("title", "YouTube Track"),
+                                "duration": duration_str,
+                                "source": "FastAPI Cookie Pool",
+                            }
+    except Exception:
+        pass
+    return None
+
+
 async def play_audio_stream(
     chat_id: int,
     query: str,
@@ -260,8 +324,14 @@ async def play_audio_stream(
 ) -> Tuple[bool, str, str, str]:
     """
     Modular, async function to search, extract audio stream, and play audio in VC.
-    Primary Strategy: YouTube extraction with client spoofing fallback.
-    Secondary Strategy: JioSaavn API fallback.
+
+    Two-Step Optimization:
+      Step 1: Fast Searching using `youtube-search-python` to get the exact YouTube URL (<1 sec).
+      Step 2: Fast Extraction by sending ONLY that exact URL to the FastAPI Cookie Pool.
+
+    Fallback Pipeline:
+      1. Local client-spoofed yt-dlp extraction
+      2. JioSaavn API search/download fallback
 
     Returns:
         (success: bool, title: str, duration: str, message: str)
@@ -269,21 +339,25 @@ async def play_audio_stream(
     loop = asyncio.get_event_loop()
     extracted_data = None
 
-    # Step 1: Primary YouTube Search & Direct Audio Extraction with Client Spoofing
-    video_targets = await loop.run_in_executor(None, _get_flat_search_results, query, 3)
+    # Step 1: Fast Searching with youtube-search-python (<1 second)
+    exact_url = await fast_search_youtube(query)
 
-    for target_url in video_targets:
-        if extracted_data:
-            break
+    # Step 2: Fast Extraction via FastAPI Cookie Pool
+    if exact_url:
+        extracted_data = await fast_extract_from_api(exact_url)
+
+    # Fallback 1: Local yt-dlp client spoofing if FastAPI Cookie Pool is unavailable
+    if not extracted_data:
+        search_target = exact_url if exact_url else query
         for profile in CLIENT_PROFILES:
-            info = await loop.run_in_executor(None, _extract_yt_info, target_url, profile)
+            info = await loop.run_in_executor(None, _extract_yt_info, search_target, profile)
             if info and info.get("stream_url"):
                 stream_valid = await _check_stream_url(info["stream_url"])
                 if stream_valid:
                     extracted_data = info
                     break
 
-    # Step 2: Secondary JioSaavn API Fallback
+    # Fallback 2: Secondary JioSaavn API Fallback
     if not extracted_data:
         jio_info = await _search_jiosaavn(query)
         if jio_info and jio_info.get("stream_url"):
