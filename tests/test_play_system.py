@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from play_system import play_audio_stream, _search_jiosaavn, _format_duration
+from play_system import play_audio_stream, fast_search_youtube, fast_extract_from_api, _search_jiosaavn, _format_duration
 
 
 class MockPyTgCalls:
@@ -23,6 +23,26 @@ async def test_jiosaavn_search():
     assert res is not None
     assert "stream_url" in res
     assert res["stream_url"].startswith("http")
+
+
+@pytest.mark.asyncio
+async def test_fast_search_youtube():
+    # Direct YouTube URL should be returned immediately
+    yt_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    res_url = await fast_search_youtube(yt_url)
+    assert res_url == yt_url
+
+    # Query search should return a valid YouTube URL
+    res_search = await fast_search_youtube("Never Gonna Give You Up")
+    assert res_search is not None
+    assert "youtube.com" in res_search or "youtu.be" in res_search
+
+
+@pytest.mark.asyncio
+async def test_fast_extract_from_api():
+    # Calling endpoint without a running FastAPI server should return None gracefully without raising
+    res = await fast_extract_from_api("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert res is None or isinstance(res, dict)
 
 
 @pytest.mark.asyncio
