@@ -132,6 +132,7 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
     """
     100% Zero-Cookie YouTube-ONLY Audio Extraction via Asynchronous Multi-Layer Fallback Chain.
 
+    LAYER 0: FastAPI Cookie Pool Endpoint (Ultra-Fast)
     LAYER 1: yt-dlp Mobile Client Spoofing (Primary)
     LAYER 2: pytubefix (Backup 1)
     LAYER 3: Cobalt API Stream Fetcher (Backup 2)
@@ -145,6 +146,24 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
 
     target_url = url or f"https://www.youtube.com/watch?v={video_id}"
     LOGGER(__name__).info(f"[YT-STREAM] Initiating YouTube extraction chain for video_id: {video_id}")
+
+    # LAYER 0: FastAPI Cookie Pool Endpoint (Ultra-Fast)
+    try:
+        api_url = getattr(config, "API_URL", None) or getattr(config, "FASTAPI_URL", None) or "http://127.0.0.1:8000"
+        api_endpoint = f"{api_url.rstrip('/')}/api/extract"
+        timeout = aiohttp.ClientTimeout(total=3)
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            async with session.get(api_endpoint, params={"url": target_url, "video": False}) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success") and data.get("data"):
+                        stream_url = data["data"].get("stream_url")
+                        if stream_url:
+                            LOGGER(__name__).info(f"[YT-STREAM:L0] Success! Direct stream retrieved from FastAPI Pool for {video_id}")
+                            return stream_url
+    except Exception as e:
+        LOGGER(__name__).debug(f"[YT-STREAM:L0] Layer 0 (FastAPI Pool) failed/bypassed for {video_id}: {e}")
 
     # LAYER 1: yt-dlp Mobile Client Spoofing + Rotated Cookie (Primary)
     cookie_file = get_next_cookie_file()
@@ -306,7 +325,7 @@ class YouTubeExtractor:
     """Zero-Cookie YouTube-ONLY Audio & Video Extraction Pipeline."""
 
     @classmethod
-    async def download_song(cls, link: str) -> Optional[str]:
+    async def download_song(cls, link: str, is_song_downloader: bool = False) -> Optional[str]:
         video_id = extract_video_id(link)
         if not video_id or len(video_id) < 3:
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Invalid video_id extracted from link: {link}")
@@ -322,13 +341,30 @@ class YouTubeExtractor:
         stream_url = await get_youtube_stream(video_id, yt_link)
 
         if stream_url and (stream_url.startswith("http://") or stream_url.startswith("https://")):
-            dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-            connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
-                saved = await _save_stream_to_file(session, stream_url, dest_path)
-                if saved:
-                    AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
-                    return dest_path
+            if not is_song_downloader:
+                async def _bg_save():
+                    try:
+                        dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+                        connector = aiohttp.TCPConnector(ssl=False)
+                        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
+                            saved = await _save_stream_to_file(session, stream_url, dest_path)
+                            if saved:
+                                AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
+                    except Exception as bg_err:
+                        LOGGER(__name__).debug(f"Background save failed for {video_id}: {bg_err}")
+
+                asyncio.create_task(_bg_save())
+                AudioCache.set(video_id=video_id, local_path=stream_url, source="youtube")
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] Fast direct stream URL returned for VC playback: {video_id}")
+                return stream_url
+            else:
+                dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
+                    saved = await _save_stream_to_file(session, stream_url, dest_path)
+                    if saved:
+                        AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
+                        return dest_path
 
         # Fallback 1: Direct yt-dlp local audio download
         cookie_file = get_next_cookie_file()
@@ -452,8 +488,8 @@ class YouTubeExtractor:
         return await cls.download_song(link)
 
 
-async def download_song(link: str) -> Optional[str]:
-    return await YouTubeExtractor.download_song(link)
+async def download_song(link: str, is_song_downloader: bool = False) -> Optional[str]:
+    return await YouTubeExtractor.download_song(link, is_song_downloader=is_song_downloader)
 
 
 async def download_video(link: str) -> Optional[str]:
@@ -786,11 +822,11 @@ class YouTubeAPI:
             if video or songvideo:
                 downloaded_file = await download_video(link)
             else:
-                downloaded_file = await download_song(link)
+                downloaded_file = await download_song(link, is_song_downloader=is_song_downloader)
 
             if not downloaded_file and (video or songvideo):
                 LOGGER(__name__).info("[YT-DOWNLOAD] Video download failed, retrying in audio mode...")
-                downloaded_file = await download_song(link)
+                downloaded_file = await download_song(link, is_song_downloader=is_song_downloader)
 
             if not downloaded_file:
                 if is_song_downloader:
