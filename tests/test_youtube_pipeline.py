@@ -11,7 +11,7 @@ from SONALI_MUSIC.utils.youtube_utils import (
     classify_ytdl_error,
     get_ytdl_base_opts,
 )
-from SONALI_MUSIC.platforms.Youtube import is_cookie_usable as youtube_is_cookie_usable
+from SONALI_MUSIC.platforms.Youtube import is_cookie_usable as youtube_is_cookie_usable, YouTubeExtractor, YouTube
 from SONALI_MUSIC.platforms.Jiosaavn import (
     clean_song_title,
     calculate_similarity,
@@ -139,6 +139,15 @@ class TestYouTubePipeline(unittest.TestCase):
     def test_cobalt_url_config(self):
         self.assertIsNone(config.COBALT_API_URL)
         self.assertIsNone(config.SELF_HOSTED_COBALT_URL)
+
+    def test_fast_youtube_download_mode(self):
+        async def _run():
+            res, direct = await YouTube.download("dQw4w9WgXcQ", mystic=None, videoid=True, songaudio=None, songvideo=None)
+            self.assertTrue(direct)
+            self.assertIsNotNone(res)
+            self.assertTrue(res.startswith("http") or os.path.exists(res))
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":

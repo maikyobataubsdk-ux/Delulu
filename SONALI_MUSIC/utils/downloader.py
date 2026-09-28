@@ -49,9 +49,9 @@ def download(url: str, my_hook=None) -> str:
 
         if loop.is_running():
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                res = pool.submit(asyncio.run, YouTubeExtractor.download_song(url)).result()
+                res = pool.submit(asyncio.run, YouTubeExtractor.download_song(url, is_song_downloader=True)).result()
         else:
-            res = loop.run_until_complete(YouTubeExtractor.download_song(url))
+            res = loop.run_until_complete(YouTubeExtractor.download_song(url, is_song_downloader=True))
 
         if res and is_valid_media_file(res):
             LOGGER(__name__).info(f"[YT-DOWNLOAD] Downloader helper retrieved media using API system: {res}")
