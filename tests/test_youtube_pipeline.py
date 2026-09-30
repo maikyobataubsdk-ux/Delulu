@@ -12,11 +12,6 @@ from SONALI_MUSIC.utils.youtube_utils import (
     get_ytdl_base_opts,
 )
 from SONALI_MUSIC.platforms.Youtube import is_cookie_usable as youtube_is_cookie_usable, YouTubeExtractor, YouTube
-from SONALI_MUSIC.platforms.Jiosaavn import (
-    clean_song_title,
-    calculate_similarity,
-    JioSaavn,
-)
 
 
 class TestYouTubePipeline(unittest.TestCase):
@@ -97,21 +92,6 @@ class TestYouTubePipeline(unittest.TestCase):
         self.assertTrue(CircuitBreaker.is_available(url2))
         CircuitBreaker.record_failure(url2, status_code=500)
         self.assertFalse(CircuitBreaker.is_available(url2))
-
-    def test_clean_song_title(self):
-        raw = "Kesariya (Official Video) [Lyrics] 4K HD - Arijit Singh"
-        cleaned = clean_song_title(raw)
-        self.assertNotIn("Official Video", cleaned)
-        self.assertNotIn("Lyrics", cleaned)
-        self.assertNotIn("4K", cleaned)
-        self.assertNotIn("HD", cleaned)
-        self.assertEqual(cleaned, "Kesariya - Arijit Singh")
-
-    def test_title_similarity(self):
-        s1 = "Kesariya Arijit Singh"
-        s2 = "Kesariya Brahmastra Arijit Singh"
-        sim = calculate_similarity(clean_song_title(s1), clean_song_title(s2))
-        self.assertGreater(sim, 0.7)
 
     def test_audio_cache(self):
         temp_dir = tempfile.mkdtemp()

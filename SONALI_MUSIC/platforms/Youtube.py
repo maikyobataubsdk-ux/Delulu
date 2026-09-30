@@ -35,7 +35,6 @@ from SONALI_MUSIC.utils.youtube_utils import (
     mark_cookie_unusable,
 )
 
-_JIOSAAVN_CACHE: Dict[str, str] = {}
 DOWNLOAD_DIR = os.path.abspath("downloads")
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -384,36 +383,6 @@ class YouTubeExtractor:
                 if cookie_candidate and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
                     mark_cookie_unusable(cookie_candidate, f"{err_cat}: {err_msg}")
                 LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 1 (yt-dlp) failed for {video_id} with {cookie_candidate}: {e}")
-
-        # Fallback 2: JioSaavn API audio search and download
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Fallback 2: JioSaavn API search and download for video_id: {video_id}")
-            from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
-            track_title = video_id
-            try:
-                title_res, _ = await YouTube._oembed_details(video_id)
-                if title_res and title_res != "Unknown Title":
-                    track_title = title_res
-            except Exception:
-                pass
-
-            saavn_file = await JioSaavn.download_song_by_query(
-                query=track_title,
-                dest_filename=f"{video_id}.mp3",
-                target_title=track_title,
-            )
-            if saavn_file and is_valid_media_file(saavn_file):
-                AudioCache.set(video_id=video_id, local_path=saavn_file, source="jiosaavn")
-                return saavn_file
-
-            song_info = await JioSaavn.search_song(query=track_title, target_title=track_title)
-            if song_info and song_info.get("stream_url"):
-                s_url = song_info["stream_url"]
-                _JIOSAAVN_CACHE[video_id] = s_url
-                AudioCache.set(video_id=video_id, local_path=s_url, source="jiosaavn")
-                return s_url
-        except Exception as saavn_err:
-            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 2 (JioSaavn) failed for {video_id}: {saavn_err}")
 
         if stream_url:
             LOGGER(__name__).warning(f"[YT-DOWNLOAD] Returning raw stream_url as last resort for {video_id}")

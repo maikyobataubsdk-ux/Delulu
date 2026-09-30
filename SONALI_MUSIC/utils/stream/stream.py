@@ -233,25 +233,7 @@ async def stream(
                             image=thumbnail,
                         )
                     else:
-                        LOGGER(__name__).info("[STREAM-FALLBACK] YouTube local download failed. Triggering last-resort JioSaavn fallback.")
-                        from SONALI_MUSIC.platforms.Jiosaavn import JioSaavn
-                        saavn_file = await JioSaavn.download_song_by_query(
-                            query=title,
-                            dest_filename=f"{vidid}.mp3",
-                            target_title=title,
-                        )
-                        if saavn_file and os.path.exists(saavn_file):
-                            file_path = saavn_file
-                            direct = False
-                            await Sona.join_call(
-                                chat_id,
-                                original_chat_id,
-                                file_path,
-                                video=None,
-                                image=thumbnail,
-                            )
-                        else:
-                            raise join_err
+                        raise join_err
                 else:
                     raise join_err
 
