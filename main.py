@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import yt_dlp
+from SONALI_MUSIC.utils.youtube_utils import get_ytdl_base_opts
 
 app = FastAPI(
     title="YouTube Stream Extraction API",
@@ -60,30 +61,7 @@ executor = ThreadPoolExecutor(max_workers=16)
 
 def _extract_stream_sync(url: str, is_video: bool = False) -> Dict[str, Any]:
     cookie_file = get_next_cookie_file()
-
-    format_spec = 'bestaudio/best' if not is_video else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-
-    ydl_opts = {
-        'format': format_spec,
-        'noplaylist': True,
-        'skip_download': True,
-        'extract_flat': False,
-        'no_warnings': True,
-        'quiet': True,
-        'cachedir': False,
-        'youtube_include_dash_manifest': False,
-        'youtube_include_hls_manifest': False,
-        'ignoreerrors': False,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios', 'mweb'],
-                'player_skip': ['webpage', 'configs']
-            }
-        }
-    }
-
-    if cookie_file and os.path.exists(cookie_file):
-        ydl_opts['cookiefile'] = cookie_file
+    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=is_video)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)

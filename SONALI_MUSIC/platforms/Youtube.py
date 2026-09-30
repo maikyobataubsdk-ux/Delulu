@@ -29,6 +29,8 @@ from SONALI_MUSIC.utils.youtube_utils import (
     CircuitBreaker,
     AudioCache,
     get_next_cookie_file,
+    get_valid_cookie_files,
+    get_ytdl_base_opts,
     is_cookie_usable as is_cookie_file_usable,
     mark_cookie_unusable,
 )
@@ -169,20 +171,7 @@ async def get_youtube_stream(video_id: str, url: Optional[str] = None) -> Option
     cookie_file = get_next_cookie_file()
     try:
         LOGGER(__name__).info(f"[YT-STREAM:L1] Attempting yt-dlp mobile client spoofing with cookie ({os.path.basename(cookie_file) if cookie_file else 'none'}) for {video_id}")
-        ydl_opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "android_vr", "mweb"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-            "nocheckcertificate": True,
-            "quiet": True,
-            "no_warnings": True,
-        }
-        if cookie_file:
-            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+        ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
 
         def _extract_l1():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -366,38 +355,35 @@ class YouTubeExtractor:
                         AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
                         return dest_path
 
-        # Fallback 1: Direct yt-dlp local audio download
-        cookie_file = get_next_cookie_file()
-        try:
-            LOGGER(__name__).info(f"[YT-DOWNLOAD] Fallback 1: Direct yt-dlp local download for video_id: {video_id}")
-            ydl_opts = {
-                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
-                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ],
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
-            if cookie_file:
-                ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+        # Fallback 1: Direct yt-dlp local audio download using rotated YouTube cookies
+        valid_cookies = get_valid_cookie_files()
+        next_c = get_next_cookie_file()
+        if next_c and next_c in valid_cookies:
+            valid_cookies.remove(next_c)
+            valid_cookies.insert(0, next_c)
+        cookie_candidates = valid_cookies + [None]
 
-            def _dl_ytdl():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([yt_link])
+        for cookie_candidate in cookie_candidates:
+            try:
+                c_name = os.path.basename(cookie_candidate) if cookie_candidate else "no-cookies"
+                LOGGER(__name__).info(f"[YT-DOWNLOAD] Fallback 1: Direct yt-dlp local download for video_id: {video_id} using ({c_name})")
+                ydl_opts = get_ytdl_base_opts(cookie_file=cookie_candidate, is_video=False)
+                ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
 
-            await asyncio.to_thread(_dl_ytdl)
-            dl_file = find_downloaded_file(video_id, is_video=False)
-            if dl_file:
-                AudioCache.set(video_id=video_id, local_path=dl_file, source="youtube")
-                return dl_file
-        except Exception as e:
-            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 1 (yt-dlp) failed for {video_id}: {e}")
+                def _dl_ytdl():
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([yt_link])
+
+                await asyncio.to_thread(_dl_ytdl)
+                dl_file = find_downloaded_file(video_id, is_video=False)
+                if dl_file:
+                    AudioCache.set(video_id=video_id, local_path=dl_file, source="youtube")
+                    return dl_file
+            except Exception as e:
+                err_cat, err_msg = classify_ytdl_error(e)
+                if cookie_candidate and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+                    mark_cookie_unusable(cookie_candidate, f"{err_cat}: {err_msg}")
+                LOGGER(__name__).warning(f"[YT-DOWNLOAD] Fallback 1 (yt-dlp) failed for {video_id} with {cookie_candidate}: {e}")
 
         # Fallback 2: JioSaavn API audio search and download
         try:
@@ -451,38 +437,31 @@ class YouTubeExtractor:
             return existing_file
 
         yt_link = f"https://www.youtube.com/watch?v={video_id}"
-        cookie_file = get_next_cookie_file()
+        valid_cookies = get_valid_cookie_files()
+        next_c = get_next_cookie_file()
+        if next_c and next_c in valid_cookies:
+            valid_cookies.remove(next_c)
+            valid_cookies.insert(0, next_c)
+        cookie_candidates = valid_cookies + [None]
 
-        try:
-            ydl_opts = {
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["ios", "android_vr", "mweb"],
-                        "player_skip": ["webpage", "configs"],
-                    }
-                },
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
-            if cookie_file:
-                ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+        for cookie_file in cookie_candidates:
+            try:
+                ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=True)
+                ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
 
-            def _dl_vid():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([yt_link])
+                def _dl_vid():
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([yt_link])
 
-            await asyncio.to_thread(_dl_vid)
-            downloaded = find_downloaded_file(video_id, is_video=True)
-            if downloaded:
-                return downloaded
-        except Exception as e:
-            err_cat, err_msg = classify_ytdl_error(e)
-            if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
-                mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
-            LOGGER(__name__).warning(f"[YT-DOWNLOAD] Video extraction failed for {video_id}: {e}")
+                await asyncio.to_thread(_dl_vid)
+                downloaded = find_downloaded_file(video_id, is_video=True)
+                if downloaded:
+                    return downloaded
+            except Exception as e:
+                err_cat, err_msg = classify_ytdl_error(e)
+                if cookie_file and err_cat in ("BOT_CHECK", "AUTH_REQUIRED"):
+                    mark_cookie_unusable(cookie_file, f"{err_cat}: {err_msg}")
+                LOGGER(__name__).warning(f"[YT-DOWNLOAD] Video extraction failed for {video_id}: {e}")
 
         LOGGER(__name__).warning(f"[YT-DOWNLOAD] Video extraction failed for {video_id}. Falling back to audio mode.")
         return await cls.download_song(link)
@@ -522,20 +501,7 @@ class YouTubeAPI:
     async def _ytdl_extract_track_info(self, query_or_url: str) -> Optional[Tuple[Dict[str, Any], str]]:
         target = query_or_url if ("youtube.com" in query_or_url or "youtu.be" in query_or_url) else f"ytsearch5:{query_or_url}"
         cookie_file = get_next_cookie_file()
-        ydl_opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "android_vr", "mweb"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-            "nocheckcertificate": True,
-            "quiet": True,
-            "no_warnings": True,
-        }
-        if cookie_file:
-            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+        ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
 
         def _extract():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -735,20 +701,7 @@ class YouTubeAPI:
 
         cookie_file = get_next_cookie_file()
         formats_available = []
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "android_vr", "mweb"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-            "nocheckcertificate": True,
-            "quiet": True,
-            "no_warnings": True,
-        }
-        if cookie_file:
-            ydl_opts["cookiefile"] = os.path.abspath(cookie_file)
+        ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False)
 
         def _extract_formats():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
