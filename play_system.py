@@ -7,6 +7,7 @@ import config
 from pytgcalls.types import MediaStream, AudioQuality
 from SONALI_MUSIC.utils.youtube_utils import (
     get_next_cookie_file,
+    get_ytdl_base_opts,
     classify_ytdl_error,
     mark_cookie_unusable,
 )
@@ -71,23 +72,8 @@ async def _check_stream_url(url: str) -> bool:
 def _extract_yt_info(url_or_query: str, client_clients: list) -> Optional[Dict[str, Any]]:
     """Synchronous yt-dlp extraction with specified player_client profile and rotated cookie."""
     cookie_file = get_next_cookie_file()
-    ydl_opts = {
-        "format": "bestaudio/best/ba/b",
-        "format_sort": ["res", "ext:m4a:m4a", "acodec"],
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "geo_bypass": True,
-        "nocheckcertificate": True,
-        "logger": SilentLogger(),
-        "extractor_args": {
-            "youtube": {
-                "player_client": client_clients,
-            }
-        },
-    }
-    if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
+    ydl_opts = get_ytdl_base_opts(cookie_file=cookie_file, is_video=False, player_clients=client_clients)
+    ydl_opts["logger"] = SilentLogger()
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
