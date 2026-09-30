@@ -93,6 +93,13 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         return None
 
+    cached_info = AudioCache.get(video_id)
+    if cached_info and cached_info.get("local_path"):
+        lp = cached_info["local_path"]
+        if not (lp.startswith("http://") or lp.startswith("https://")):
+            if is_valid_media_file(lp):
+                return lp
+
     exts = [".mp4", ".mkv", ".webm"] if is_video else [".mp3", ".m4a", ".webm", ".opus", ".mp4", ".aac"]
     for ext in exts:
         file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}{ext}")
@@ -100,7 +107,8 @@ def find_downloaded_file(video_id: str, is_video: bool = False) -> Optional[str]
             return file_path
 
     for f in os.listdir(DOWNLOAD_DIR):
-        if f.startswith(f"{video_id}."):
+        name, _ = os.path.splitext(f)
+        if name == video_id:
             file_path = os.path.join(DOWNLOAD_DIR, f)
             if is_valid_media_file(file_path):
                 return file_path
@@ -333,11 +341,18 @@ class YouTubeExtractor:
                 async def _bg_save():
                     try:
                         dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+                        tmp_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.tmp")
                         connector = aiohttp.TCPConnector(ssl=False)
                         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
-                            saved = await _save_stream_to_file(session, stream_url, dest_path)
+                            saved = await _save_stream_to_file(session, stream_url, tmp_path)
                             if saved:
+                                os.replace(tmp_path, dest_path)
                                 AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
+                            elif os.path.exists(tmp_path):
+                                try:
+                                    os.remove(tmp_path)
+                                except Exception:
+                                    pass
                     except Exception as bg_err:
                         LOGGER(__name__).debug(f"Background save failed for {video_id}: {bg_err}")
 
@@ -347,12 +362,19 @@ class YouTubeExtractor:
                 return stream_url
             else:
                 dest_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+                tmp_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.tmp")
                 connector = aiohttp.TCPConnector(ssl=False)
                 async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, connector=connector) as session:
-                    saved = await _save_stream_to_file(session, stream_url, dest_path)
+                    saved = await _save_stream_to_file(session, stream_url, tmp_path)
                     if saved:
+                        os.replace(tmp_path, dest_path)
                         AudioCache.set(video_id=video_id, local_path=dest_path, source="youtube")
                         return dest_path
+                    elif os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
 
         # Fallback 1: Direct yt-dlp local audio download using rotated YouTube cookies
         valid_cookies = get_valid_cookie_files()
